@@ -208,14 +208,14 @@ def get_deep_contextualized_embeddings(X,y,max_length):
     return np.array(deep_contextualized_embeddings),np.array(y_pred),np.array(sequence_lengths)
 
 def save_state():
-    np.save('sarcasm/Colab Notebooks/data/trained_models/generated_embeddings_train.npy',deep_contextualized_embeddings_train)
-    np.save('sarcasm/Colab Notebooks/data/trained_models/generated_embeddings_parent_train.npy',deep_contextualized_embeddings_parent_train)
-    np.save('sarcasm/Colab Notebooks/data/trained_models/generated_embeddings_test.npy',deep_contextualized_embeddings_test)
-    np.save('sarcasm/Colab Notebooks/data/trained_models/generated_embeddings_parent_test.npy',deep_contextualized_embeddings_parent_test)
-    np.save('sarcasm/Colab Notebooks/data/trained_models/x_train.npy',X_train)
-    np.save('sarcasm/Colab Notebooks/data/trained_models/x_test.npy',X_test)
-    np.save('sarcasm/Colab Notebooks/data/trained_models/y_train.npy',y_train)
-    np.save('sarcasm/Colab Notebooks/data/trained_models/y_test.npy',y_test)
+    np.save('data/trained_models/generated_embeddings_train.npy',deep_contextualized_embeddings_train)
+    np.save('data/trained_models/generated_embeddings_parent_train.npy',deep_contextualized_embeddings_parent_train)
+    np.save('data/trained_models/generated_embeddings_test.npy',deep_contextualized_embeddings_test)
+    np.save('data/trained_models/generated_embeddings_parent_test.npy',deep_contextualized_embeddings_parent_test)
+    np.save('data/trained_models/x_train.npy',X_train)
+    np.save('data/trained_models/x_test.npy',X_test)
+    np.save('data/trained_models/y_train.npy',y_train)
+    np.save('data/trained_models/y_test.npy',y_test)
 
 #Remove nan here
 X = df_new['comment']
@@ -377,10 +377,13 @@ decay_steps = 8
 #Currenlty not using concatenation of Glove with ELMO
 tf.reset_default_graph()
 lstm = LSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
+lstm_parent = LSTM(num_classes,word_embeddings_size,elmo_embedding_size,batch_size,epochs,init_learning,decay_rate,decay_steps)
 
 lstm.train(deep_contextualized_embeddings_train,y_pred_train,sequence_lengths_train,'data/trained_models/elmo_bi_directional_lstm.ckpt')
+lstm_parent.train(deep_contextualized_embeddings_parent_train,y_pred_train,sequence_lengths_parent_train,'data/trained_models/elmo_bi_directional_lstm_parent.ckpt')
 
 lstm.test(deep_contextualized_embeddings_test,y_pred_test,sequence_lengths_test,'data/trained_models/elmo_bi_directional_lstm.ckpt')
+lstm_parent.test(deep_contextualized_embeddings_parent_test,y_pred_test,sequence_lengths_parent_test,'data/trained_models/elmo_bi_directional_lstm_parent.ckpt')
 
 save_state()
 
