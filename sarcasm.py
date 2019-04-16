@@ -24,7 +24,7 @@ embeddings = {}
 
 elmo = hub.Module("https://tfhub.dev/google/elmo/2",trainable=True)
 
-df = pd.read_csv("sarcasm/Colab Notebooks/data/dataset/train-balanced-sarcasm.csv")
+df = pd.read_csv("data/dataset/train-balanced-sarcasm.csv")
 
 df_new = df[['parent_comment','comment','label']]
 
@@ -68,11 +68,11 @@ def add_to_dictionary(tokens):
             dictionary.append(token)
 
 def save_dictionary():
-    with open('sarcasm/Colab Notebooks/data/processed/dictionary.txt','w') as file:
+    with open('data/processed/dictionary.txt','w') as file:
         file.writelines("%s\n" % word for word in dictionary)
 
 def read_dictionary():
-    with open('sarcasm/Colab Notebooks/data/processed/dictionary.txt','r') as file:
+    with open('data/processed/dictionary.txt','r') as file:
         temp = file.read().splitlines()
         for i in range(0,len(temp)):
             dictionary.append(temp[i])
@@ -99,7 +99,7 @@ def create_dictionary(dataset):
     save_dictionary()
 
 def populate_dictionary():
-    if not os.path.isfile('sarcasm/Colab Notebooks/data/processed/dictionary.txt'):
+    if not os.path.isfile('data/processed/dictionary.txt'):
         starttime = time.time()
         create_dictionary(df_new)
         endtime = time.time()
@@ -112,7 +112,7 @@ def populate_dictionary():
 
 def populate_embeddings_dict():
     starttime = time.time()
-    with open('sarcasm/Colab Notebooks/data/processed/glove.6B.300d.txt','r') as file:
+    with open('data/processed/glove.6B.300d.txt','r') as file:
         for line in file:
             values = line.split()
             word = values[0]
