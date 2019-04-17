@@ -14,27 +14,105 @@ from sklearn.model_selection import train_test_split
 from numpy import nan
 import math
 
-nltk.download('stopwords')
-
-stop_words = set(stopwords.words('english'))
-
-dictionary = []
-
-embeddings = {}
-
-elmo = hub.Module("https://tfhub.dev/google/elmo/2",trainable=True)
-
-df = pd.read_csv("data/dataset/train-balanced-sarcasm.csv")
-
-df_new = df[['parent_comment','comment','label']]
-
-sb.countplot(x='label',hue='label',data=df_new)
-
-df_new = df_new.sample(20000)
-
-df_new.shape
-
-df_new.head()
+class LSTM():
+    
+    def __init__(self,num_classes,elmo_embed_size,embed_size,batch_size,epochs,init_learning_rate,decay_steps,decay_rate):
+        self.X = tf.placeholder(shape=[None,None,embed_size + elmo_embed_size],dtype=tf.float32,name='X')
+        self.y = tf.placeholder(shape=[None],dtype=tf.int64,name='y')
+        self.sequence_lengths = tf.placeholder(shape=[None],dtype=tf.int32,name='sequence_lengths')
+        self.num_classes = num_classes
+        self.elmo_embed_size = elmo_embed_size
+        self.embed_size = embed_size
+        self.hidden_size = elmo_embed_size + embed_size
+        self.batch_size = batch_size
+        self.epochs = epochs
+        self.init_learning_rate = init_learning_rate
+        self.decay_steps = decay_steps
+        self.deacy_rate = decay_rate
+        self.model()
+    
+    def model(self):
+        cell_fw = tf.contrib.rnn.LSTMCell(self.hidden_size,forget_bias=1.0,state_is_tuple=True,reuse=tf.get_variable_scope().reuse)
+        cell_bw = tf.contrib.rnn.LSTMCell(self.hidden_size,forget_bias=1.0,state_is_tuple=True,reuse=tf.get_variable_scope().reuse)
+        with tf.variable_scope('Bi-Directional-LSTM',reuse=tf.AUTO_REUSE):
+            output_vals,output_states = tf.nn.bidirectional_dynamic_rnn(
+            cell_fw = cell_fw,
+            cell_bw = cell_bw,
+            inputs = self.X,
+            sequence_length = self.sequence_lengths,
+            dtype = tf.float32)
+        self.final_state = tf.concat([output_states[0].c,output_states[1].c],axis=1)
+        with tf.variable_scope('Softmax',reuse=tf.AUTO_REUSE):
+            self.softmax_w = tf.get_variable('softmax_w',shape=[2 * self.hidden_size,self.num_classes],initializer=tf.truncated_normal_initializer(),dtype=tf.float32)
+            self.softmax_b = tf.get_variable('softmax_b',shape=[self.num_classes],initializer=tf.constant_initializer(0.0),dtype=tf.float32)
+        self.logits = tf.matmul(self.final_state,self.softmax_w) + self.softmax_b
+        self.predictions = tf.argmax(tf.nn.softmax(self.logits),1,name='predictions')
+        self.cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.y,logits=self.logits)
+        self.cost = tf.reduce_mean(self.cross_entropy)
+        self.accuracy = tf.reduce_mean(tf.cast(tf.equal(self.predictions,self.y),tf.float32),name='accuracy')
+    
+    def train(self,X_train,y_train,sequence_lengths_train,path):
+        self.global_step = tf.Variable(0,name='global_step',trainable=False)
+        self.learning_rate = tf.train.exponential_decay(self.init_learning_rate,self.global_step,self.decay_steps,
+                                                        self.decay_rate,staircase=True)
+        optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+        grads = optimizer.compute_gradients(self.cost)
+        self.train_step = optimizer.apply_gradients(grads,global_step=self.global_step)
+        with tf.Session() as sess:
+            sess.run(tf.global_variables_initializer())
+            for j in range(0,self.epochs):
+                starttime = time.time()
+                epoch_cost = 0
+                for i in range(0,math.ceil(X_train.shape[0]/self.batch_size)):
+                    X_train_batch = X_train[i * self.batch_size : min((i + 1) * self.batch_size,X_train.shape[0])]
+                    y_train_batch = y_train[i * self.batch_size : min((i + 1) * self.batch_size,len(y_train))]
+                    sequence_lengths_batch = sequence_lengths_train[i * self.batch_size : min((i + 1) * self.batch_size,len(sequence_lengths_train))]
+                    fetches = {
+                        'cross_entropy': self.cross_entropy,
+                        'cost': self.cost,
+                        'train_step': self.train_step,
+                        'learning_rate': self.learning_rate,
+                        'global_step': self.global_step
+                    }
+                    feed_dict = {
+                        self.X : X_train_batch,
+                        self.y : y_train_batch,
+                        self.sequence_lengths : sequence_lengths_batch
+                    }
+                    resp = sess.run(fetches,feed_dict)
+                    print('Learning rate:- ')
+                    print(resp['learning_rate'])
+                    print('Global Step:- ')
+                    print(resp['global_step'])
+                    epoch_cost += resp['cost']
+                endtime = time.time()
+                print('Time to train epoch ' + str(j) + ':-')
+                print(endtime - starttime)
+                print('Epoch ' + str(j) + " cost :-")
+                print(epoch_cost)
+            save_model(sess,path)
+            
+    def test(self,X_test,y_test,sequence_lengths_test,path):
+        with tf.Session() as sess:
+            starttime = time.time()
+            load_model(sess,path)
+            fetches = {
+                'accuracy': self.accuracy,
+                'predictions': self.predictions
+            }
+            feed_dict = {
+                self.X : X_test,
+                self.y : y_test,
+                self.sequence_lengths: sequence_lengths_test
+            }
+            resp = sess.run(fetches,feed_dict)
+            endtime = time.time()
+            print('Time to test model:- ')
+            print(endtime - starttime)
+            print('Model accuracy:- ')
+            print(resp['accuracy'])
+            print('Model predictions:- ')
+            print(resp['predictions'])
 
 def remove_stopwords(tokens):
     tokens_wo_stopwords = []
@@ -217,6 +295,26 @@ def save_state():
     np.save('data/trained_models/y_train.npy',y_train)
     np.save('data/trained_models/y_test.npy',y_test)
 
+stop_words = set(stopwords.words('english'))
+
+dictionary = []
+
+embeddings = {}
+
+elmo = hub.Module("https://tfhub.dev/google/elmo/2",trainable=True)
+
+df = pd.read_csv("data/dataset/train-balanced-sarcasm.csv")
+
+df_new = df[['parent_comment','comment','label']]
+
+sb.countplot(x='label',hue='label',data=df_new)
+
+df_new = df_new.sample(20000)
+
+df_new.shape
+
+df_new.head()
+
 #Remove nan here
 X = df_new['comment']
 y = df_new['label']
@@ -262,106 +360,6 @@ deep_contextualized_embeddings_parent_train.shape
 deep_contextualized_embeddings_test.shape
 
 deep_contextualized_embeddings_parent_test.shape
-
-class LSTM():
-    
-    def __init__(self,num_classes,elmo_embed_size,embed_size,batch_size,epochs,init_learning_rate,decay_steps,decay_rate):
-        self.X = tf.placeholder(shape=[None,None,embed_size + elmo_embed_size],dtype=tf.float32,name='X')
-        self.y = tf.placeholder(shape=[None],dtype=tf.int64,name='y')
-        self.sequence_lengths = tf.placeholder(shape=[None],dtype=tf.int32,name='sequence_lengths')
-        self.num_classes = num_classes
-        self.elmo_embed_size = elmo_embed_size
-        self.embed_size = embed_size
-        self.hidden_size = elmo_embed_size + embed_size
-        self.batch_size = batch_size
-        self.epochs = epochs
-        self.init_learning_rate = init_learning_rate
-        self.decay_steps = decay_steps
-        self.deacy_rate = decay_rate
-        self.model()
-    
-    def model(self):
-        cell_fw = tf.contrib.rnn.LSTMCell(self.hidden_size,forget_bias=1.0,state_is_tuple=True,reuse=tf.get_variable_scope().reuse)
-        cell_bw = tf.contrib.rnn.LSTMCell(self.hidden_size,forget_bias=1.0,state_is_tuple=True,reuse=tf.get_variable_scope().reuse)
-        with tf.variable_scope('Bi-Directional-LSTM',reuse=tf.AUTO_REUSE):
-            output_vals,output_states = tf.nn.bidirectional_dynamic_rnn(
-            cell_fw = cell_fw,
-            cell_bw = cell_bw,
-            inputs = self.X,
-            sequence_length = self.sequence_lengths,
-            dtype = tf.float32)
-        self.final_state = tf.concat([output_states[0].c,output_states[1].c],axis=1)
-        with tf.variable_scope('Softmax',reuse=tf.AUTO_REUSE):
-            self.softmax_w = tf.get_variable('softmax_w',shape=[2 * self.hidden_size,self.num_classes],initializer=tf.truncated_normal_initializer(),dtype=tf.float32)
-            self.softmax_b = tf.get_variable('softmax_b',shape=[self.num_classes],initializer=tf.constant_initializer(0.0),dtype=tf.float32)
-        self.logits = tf.matmul(self.final_state,self.softmax_w) + self.softmax_b
-        self.predictions = tf.argmax(tf.nn.softmax(self.logits),1,name='predictions')
-        self.cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.y,logits=self.logits)
-        self.cost = tf.reduce_mean(self.cross_entropy)
-        self.accuracy = tf.reduce_mean(tf.cast(tf.equal(self.predictions,self.y),tf.float32),name='accuracy')
-    
-    def train(self,X_train,y_train,sequence_lengths_train,path):
-        self.global_step = tf.Variable(0,name='global_step',trainable=False)
-        self.learning_rate = tf.train.exponential_decay(self.init_learning_rate,self.global_step,self.decay_steps,
-                                                        self.decay_rate,staircase=True)
-        optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
-        grads = optimizer.compute_gradients(self.cost)
-        self.train_step = optimizer.apply_gradients(grads,global_step=self.global_step)
-        with tf.Session() as sess:
-            sess.run(tf.global_variables_initializer())
-            for j in range(0,self.epochs):
-                starttime = time.time()
-                epoch_cost = 0
-                for i in range(0,math.ceil(X_train.shape[0]/self.batch_size)):
-                    X_train_batch = X_train[i * self.batch_size : min((i + 1) * self.batch_size,X_train.shape[0])]
-                    y_train_batch = y_train[i * self.batch_size : min((i + 1) * self.batch_size,len(y_train))]
-                    sequence_lengths_batch = sequence_lengths_train[i * self.batch_size : min((i + 1) * self.batch_size,len(sequence_lengths_train))]
-                    fetches = {
-                        'cross_entropy': self.cross_entropy,
-                        'cost': self.cost,
-                        'train_step': self.train_step,
-                        'learning_rate': self.learning_rate,
-                        'global_step': self.global_step
-                    }
-                    feed_dict = {
-                        self.X : X_train_batch,
-                        self.y : y_train_batch,
-                        self.sequence_lengths : sequence_lengths_batch
-                    }
-                    resp = sess.run(fetches,feed_dict)
-                    print('Learning rate:- ')
-                    print(resp['learning_rate'])
-                    print('Global Step:- ')
-                    print(resp['global_step'])
-                    epoch_cost += resp['cost']
-                endtime = time.time()
-                print('Time to train epoch ' + str(j) + ':-')
-                print(endtime - starttime)
-                print('Epoch ' + str(j) + " cost :-")
-                print(epoch_cost)
-            save_model(sess,path)
-            
-    def test(self,X_test,y_test,sequence_lengths_test,path):
-        with tf.Session() as sess:
-            starttime = time.time()
-            load_model(sess,path)
-            fetches = {
-                'accuracy': self.accuracy,
-                'predictions': self.predictions
-            }
-            feed_dict = {
-                self.X : X_test,
-                self.y : y_test,
-                self.sequence_lengths: sequence_lengths_test
-            }
-            resp = sess.run(fetches,feed_dict)
-            endtime = time.time()
-            print('Time to test model:- ')
-            print(endtime - starttime)
-            print('Model accuracy:- ')
-            print(resp['accuracy'])
-            print('Model predictions:- ')
-            print(resp['predictions'])
 
 #Hyperparameters for the model
 #Hyperparameter tuning required
