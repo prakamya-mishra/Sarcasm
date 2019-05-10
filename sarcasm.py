@@ -42,54 +42,7 @@ class LSTM():
             sequence_length = self.sequence_lengths,
             dtype = tf.float32)
         self.final_state = tf.concat([output_states[0].c,output_states[1].c],axis=1)
-        with tf.variable_scope('Softmax',reuse=tf.AUTO_REUSE):
-            self.softmax_w = tf.get_variable('softmax_w',shape=[2 * self.hidden_size,self.num_classes],initializer=tf.truncated_normal_initializer(),dtype=tf.float32)
-            self.softmax_b = tf.get_variable('softmax_b',shape=[self.num_classes],initializer=tf.constant_initializer(0.0),dtype=tf.float32)
-        self.logits = tf.matmul(self.final_state,self.softmax_w) + self.softmax_b
-        self.predictions = tf.argmax(tf.nn.softmax(self.logits),1,name='predictions')
-        self.cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.y,logits=self.logits)
-        self.cost = tf.reduce_mean(self.cross_entropy)
-        self.accuracy = tf.reduce_mean(tf.cast(tf.equal(self.predictions,self.y),tf.float32),name='accuracy')
-    
-    def train(self,X_train,y_train,sequence_lengths_train,path):
-        self.global_step = tf.Variable(0,name='global_step',trainable=False)
-        self.learning_rate = tf.train.exponential_decay(self.init_learning_rate,self.global_step,self.decay_steps,
-                                                        self.decay_rate,staircase=True)
-        optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
-        grads = optimizer.compute_gradients(self.cost)
-        self.train_step = optimizer.apply_gradients(grads,global_step=self.global_step)
-        with tf.Session() as sess:
-            sess.run(tf.global_variables_initializer())
-            for j in range(0,self.epochs):
-                starttime = time.time()
-                epoch_cost = 0
-                for i in range(0,math.ceil(X_train.shape[0]/self.batch_size)):
-                    X_train_batch = X_train[i * self.batch_size : min((i + 1) * self.batch_size,X_train.shape[0])]
-                    y_train_batch = y_train[i * self.batch_size : min((i + 1) * self.batch_size,len(y_train))]
-                    sequence_lengths_batch = sequence_lengths_train[i * self.batch_size : min((i + 1) * self.batch_size,len(sequence_lengths_train))]
-                    fetches = {
-                        'cross_entropy': self.cross_entropy,
-                        'cost': self.cost,
-                        'train_step': self.train_step,
-                        'learning_rate': self.learning_rate,
-                        'global_step': self.global_step
-                    }
-                    feed_dict = {
-                        self.X : X_train_batch,
-                        self.y : y_train_batch,
-                        self.sequence_lengths : sequence_lengths_batch
-                    }
-                    resp = sess.run(fetches,feed_dict)
-                    print('Learning rate:- ')
-                    print(resp['learning_rate'])
-                    print('Global Step:- ')
-                    print(resp['global_step'])
-                    epoch_cost += resp['cost']
-                endtime = time.time()
-                print('Time to train epoch ' + str(j) + ':-')
-                print(endtime - starttime)
-                print('Epoch ' + str(j) + " cost :-")
-                print(epoch_cost)
+
             save_model(sess,path)
             
     def test(self,X_test,y_test,sequence_lengths_test,path):
@@ -113,6 +66,26 @@ class LSTM():
             print(resp['accuracy'])
             print('Model predictions:- ')
             print(resp['predictions'])
+
+def remove_stopwords(tokens):
+    tokens_wo_stopwords = []
+    for i in range(0,len(tokens)):
+        if tokens[i].lower() not in stop_words:
+            tokens_wo_stopwords.append(tokens[i].lower())
+    return tokens_wo_stopwords
+
+def get_pos_tag(token):
+    pos_tag = nltk.pos_tag([token])[0][1]
+    if pos_tag.startswith('N'):
+        return wordnet.NOUN
+    elif pos_tag.startswith('V'):
+        return wordnet.VERB
+    elif pos_tag.startswith('J'):
+        return wordnet.ADJ
+    elif pos_tag.startswith('R'):
+        return wordnet.ADV
+    else:
+        return wordnet.NOUN
 
 def remove_stopwords(tokens):
     tokens_wo_stopwords = []
@@ -376,12 +349,55 @@ decay_steps = 8
 tf.reset_default_graph()
 lstm = LSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
 lstm_parent = LSTM(num_classes,word_embeddings_size,elmo_embedding_size,batch_size,epochs,init_learning,decay_rate,decay_steps)
-
+with tf.variable_scope('softmax',reuse=tf.AUTO_REUSE):
+    softmax_w = tf.get_variable('W',initializer=tf.truncated_normal_initializer(shape=[4 * hidden_size,1]),dtype=tf.float32)
+    softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0,shape=[1]),dtype=tf.float32)
+final_state = tf.concat([lstm.final_state,lstm_parent.final_state],0)
+logit = tf.matmul(final_state,softmax_w) + softmax_b
+cost = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logit,labels=lstm.y)
+global_step = tf.Variable(0,name='global_step',trainable=False)
+learning_rate = tf.train.exponential_decay(init_learning_rate,global_step,decay_steps,
+                                                decay_rate,staircase=True)
+optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+gradients = optimizer.compute_gradients(cost)
+train_step = optimizer.apply_gradients(gradients,global_step=global_step)
+with tf.Session() as sess:
+    sess.run(tf.global_variables_initializer())
+    for j in range(0,epochs):
+        starttime = time.time()
+        epoch_cost = 0
+        for i in range(0,math.ceil(X_train.shape[0]/batch_size)):
+            X_train_batch = X_train[i * batch_size : min((i + 1) * batch_size,X_train.shape[0])]
+            y_train_batch = y_train[i * batch_size : min((i + 1) * batch_size,len(y_train))]
+            sequence_lengths_batch = sequence_lengths_train[i * batch_size : min((i + 1) * batch_size,len(sequence_lengths_train))]
+            X_train_parent_batch = X_train_parent[i * batch_size : min((i + 1) * batch_size,X_train.shape[0])]
+            y_train_parent_batch = y_train_parent[i * batch_size : min((i + 1) * batch_size),X_train.shape[0]]
+            sequence_lengths_parent_batch = sequence_lengths_parent_train[i * batch_size : min((i + 1) * batch_size,len(sequence_lengths_parent_train))]
+            fetches = {
+                'cost': cost,
+                'train_step': train_step,
+                'global_step': global_step        
+            }
+            feed_dict = {
+                lstm.X : X_train_batch,
+                lstm.y : y_train_batch,
+                lstm.sequence_lengths : sequence_lengths_batch,
+                lstm_parent.X : X_train_parent_batch,
+                lstm_parent.y : y_train_parent_batch,
+                lstm_parent.sequence_lengths : sequence_lengths_parent_batch
+            }
+            resp = sess.run(fetches,feed_dict)
+            print('Global Step:- ')
+            print(resp['global_step'])
+            epoch_cost += resp['cost']
+        endtime = time.time()
+        print('Time to train epoch ' + str(j) + ':-')
+        print(endtime - starttime)
+        print('Epoch ' + str(j) + " cost :-")
+        print(epoch_cost)
 lstm.train(deep_contextualized_embeddings_train,y_pred_train,sequence_lengths_train,'data/trained_models/elmo_bi_directional_lstm.ckpt')
 lstm_parent.train(deep_contextualized_embeddings_parent_train,y_pred_train,sequence_lengths_parent_train,'data/trained_models/elmo_bi_directional_lstm_parent.ckpt')
-
 lstm.test(deep_contextualized_embeddings_test,y_pred_test,sequence_lengths_test,'data/trained_models/elmo_bi_directional_lstm.ckpt')
 lstm_parent.test(deep_contextualized_embeddings_parent_test,y_pred_test,sequence_lengths_parent_test,'data/trained_models/elmo_bi_directional_lstm_parent.ckpt')
-
 save_state()
 
