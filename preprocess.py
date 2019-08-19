@@ -4,6 +4,9 @@ import nltk
 from nltk import word_tokenize
 from nltk.corpus import stopwords, wordnet
 from nltk.stem import WordNetLemmatizer
+from numpy import nan
+
+stop_words = set(stopwords.words('english'))
 
 def get_pos_tag(token):
     pos_tag = nltk.pos_tag([token])[0][1]

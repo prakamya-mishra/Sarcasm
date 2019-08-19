@@ -5,9 +5,9 @@ import time
 import seaborn as sb
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
-from numpy import nan
 import math
 
+from preprocess import get_max_length, get_max_length_parent
 from embeddings import get_deep_contextualized_embeddings
 from utils import save_state
 
@@ -61,8 +61,6 @@ class LSTM():
             print(resp['accuracy'])
             print('Model predictions:- ')
             print(resp['predictions'])
-
-stop_words = set(stopwords.words('english'))
 
 dictionary = []
 
