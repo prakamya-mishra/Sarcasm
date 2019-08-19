@@ -189,4 +189,3 @@ with tf.Session() as sess:
         print('Epoch ' + str(j) + " cost :-")
         print(epoch_cost)
     save_state()
-
