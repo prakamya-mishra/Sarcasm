@@ -190,9 +190,5 @@ with tf.Session() as sess:
         print(endtime - starttime)
         print('Epoch ' + str(j) + " cost :-")
         print(epoch_cost)
-lstm.train(deep_contextualized_embeddings_train,y_pred_train,sequence_lengths_train,'data/trained_models/elmo_bi_directional_lstm.ckpt')
-lstm_parent.train(deep_contextualized_embeddings_parent_train,y_pred_train,sequence_lengths_parent_train,'data/trained_models/elmo_bi_directional_lstm_parent.ckpt')
-lstm.test(deep_contextualized_embeddings_test,y_pred_test,sequence_lengths_test,'data/trained_models/elmo_bi_directional_lstm.ckpt')
-lstm_parent.test(deep_contextualized_embeddings_parent_test,y_pred_test,sequence_lengths_parent_test,'data/trained_models/elmo_bi_directional_lstm_parent.ckpt')
-save_state()
+    save_state()
 
