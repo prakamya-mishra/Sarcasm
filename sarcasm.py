@@ -39,8 +39,6 @@ class LSTM():
             sequence_length = self.sequence_lengths,
             dtype = tf.float32)
         self.final_state = tf.concat([output_states[0].c,output_states[1].c],axis=1)
-
-            save_model(sess,path)
             
     def test(self,X_test,y_test,sequence_lengths_test,path):
         with tf.Session() as sess:
