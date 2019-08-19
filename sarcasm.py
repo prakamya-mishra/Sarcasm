@@ -1,18 +1,15 @@
 import pandas as pd
 import numpy as np
-import nltk
-from nltk import word_tokenize
-from nltk.corpus import stopwords, wordnet
-from nltk.stem import WordNetLemmatizer
-import re
 import os
 import time
 import seaborn as sb
 import tensorflow as tf
-import tensorflow_hub as hub
 from sklearn.model_selection import train_test_split
 from numpy import nan
 import math
+
+from embeddings import get_deep_contextualized_embeddings
+from utils import save_state
 
 class LSTM():
     
@@ -67,214 +64,12 @@ class LSTM():
             print('Model predictions:- ')
             print(resp['predictions'])
 
-def remove_stopwords(tokens):
-    tokens_wo_stopwords = []
-    for i in range(0,len(tokens)):
-        if tokens[i].lower() not in stop_words:
-            tokens_wo_stopwords.append(tokens[i].lower())
-    return tokens_wo_stopwords
-
-def get_pos_tag(token):
-    pos_tag = nltk.pos_tag([token])[0][1]
-    if pos_tag.startswith('N'):
-        return wordnet.NOUN
-    elif pos_tag.startswith('V'):
-        return wordnet.VERB
-    elif pos_tag.startswith('J'):
-        return wordnet.ADJ
-    elif pos_tag.startswith('R'):
-        return wordnet.ADV
-    else:
-        return wordnet.NOUN
-
-def remove_stopwords(tokens):
-    tokens_wo_stopwords = []
-    for i in range(0,len(tokens)):
-        if tokens[i].lower() not in stop_words:
-            tokens_wo_stopwords.append(tokens[i].lower())
-    return tokens_wo_stopwords
-
-def get_pos_tag(token):
-    pos_tag = nltk.pos_tag([token])[0][1]
-    if pos_tag.startswith('N'):
-        return wordnet.NOUN
-    elif pos_tag.startswith('V'):
-        return wordnet.VERB
-    elif pos_tag.startswith('J'):
-        return wordnet.ADJ
-    elif pos_tag.startswith('R'):
-        return wordnet.ADV
-    else:
-        return wordnet.NOUN
-
-def lemmatize(tokens):
-    lemmatizer = WordNetLemmatizer()
-    for i in range(0,len(tokens)):
-        tokens[i] = lemmatizer.lemmatize(tokens[i],pos=str(get_pos_tag(tokens[i])))
-    return tokens
-
-def add_to_dictionary(tokens):
-    for token in tokens:
-        if token not in dictionary:
-            dictionary.append(token)
-
-def save_dictionary():
-    with open('data/processed/dictionary.txt','w') as file:
-        file.writelines("%s\n" % word for word in dictionary)
-
-def read_dictionary():
-    with open('data/processed/dictionary.txt','r') as file:
-        temp = file.read().splitlines()
-        for i in range(0,len(temp)):
-            dictionary.append(temp[i])
-
-def save_model(sess,path):
-    saver = tf.train.Saver()
-    saver.save(sess,path)
-
-def load_model(sess,path):
-    saver = tf.train.Saver()
-    saver.restore(sess,path)
-
-def preprocess(sentence):
-    processed_sentence = re.sub(r'[^a-zA-Z]', ' ', sentence)
-    tokens_comment = word_tokenize(processed_sentence)
-    tokens_comment = remove_stopwords(tokens_comment)
-    tokens_comment = lemmatize(tokens_comment)
-    return tokens_comment
-
-def create_dictionary(dataset):
-    for index,row in dataset.iterrows():
-        tokens_comment = preprocess(str(row['parent_comment']) + " " + str(row['comment']))
-        add_to_dictionary(tokens_comment)
-    save_dictionary()
-
-def populate_dictionary():
-    if not os.path.isfile('data/processed/dictionary.txt'):
-        starttime = time.time()
-        create_dictionary(df_new)
-        endtime = time.time()
-        print("Time to create dictionary")
-        print(endtime - starttime)
-    else:   
-        read_dictionary()
-    print("Length of dictionary:- ")
-    print(len(dictionary))
-
-def populate_embeddings_dict():
-    starttime = time.time()
-    with open('data/processed/glove.6B.300d.txt','r') as file:
-        for line in file:
-            values = line.split()
-            word = values[0]
-            word_embedding = np.asarray(values[1:])
-            embeddings[word] = word_embedding
-    endtime = time.time()
-    print("Time taken to load embeddings:- ")
-    print(endtime - starttime)
-
-def pad_tokens(tokens,max_length):
-    zeros = np.zeros(len(tokens[0]))
-    while len(tokens) < max_length:
-        tokens = np.vstack([tokens,zeros])
-    return tokens
-
-def get_max_length(X):
-    max_length = 0
-    index = 0
-    for i in range(0,len(X.index)):
-        if(X[i:i+1][X.index[i]] is not nan):
-            preprocessed_tokens = preprocess(X[i:i+1][X.index[i]])
-            if(len(preprocessed_tokens) < 30):
-                if max_length < len(preprocessed_tokens):
-                    max_length = len(preprocessed_tokens)
-                    index = i
-    print(index)
-    print(preprocess(X[index:index+1][X.index[index]]))
-    return max_length
-
-def get_max_length_parent(X_train,index):
-    max_length = 0
-    ind = 0
-    for i in range(0,len(index)):
-        processed_tokens = preprocess(X_train[index[i]])
-        if max_length < len(processed_tokens):
-            max_length = len(processed_tokens)
-            ind = i
-    print(ind)
-    print(preprocess(X_train[index[ind]]))
-    return max_length
-
-def embedding_lookup(x,embedding_dim=300):
-    if(len(embeddings) == 0):
-        populate_embeddings_dict()
-    embedding = []
-    for i in range(0,len(x)):
-        if(x[i] in embeddings):
-            embedding.append(embeddings[x[i]])
-        else:
-            zero_arr = np.zeros(embedding_dim).tolist()
-            embedding.append(zero_arr)
-    return np.array(embedding)
-
-def get_elmo_embeddings(sess,tokens_input,tokens_length):
-    embeddings = elmo(inputs={"tokens": tokens_input,"sequence_len": tokens_length},signature='tokens',as_dict=True)["elmo"]
-    return sess.run(embeddings)
-
-def get_deep_contextualized_embeddings(X,y,max_length):
-    deep_contextualized_embeddings = []
-    sequence_lengths = []
-    elmo_tokens = []
-    elmo_tokens_length = []
-    elmo_embeddings_list = []
-    y_pred = []
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        sess.run(tf.tables_initializer())
-        starttime = time.time()
-        for i in range(0,len(X.index)):
-            if(X[i:i+1][X.index[i]] is not nan):
-                preprocessed_tokens = preprocess(X[i:i+1][X.index[i]])
-                if(len(preprocessed_tokens) < max_length + 1):
-                    sequence_lengths.append(len(preprocessed_tokens))
-                    y_pred.append(y[i:i+1][y.index[i]])
-                    for j in range(len(preprocessed_tokens),max_length):
-                        preprocessed_tokens.append("<PAD>")
-                    #word_embedding = embedding_lookup(preprocessed_tokens)
-                    #word_embedding = np.array(pad_tokens(word_embedding,max_length))
-                    elmo_tokens.append(preprocessed_tokens)
-                    elmo_tokens_length.append(len(preprocessed_tokens))
-                    #deep_contextualized_embeddings.append(np.hstack([word_embedding,elmo_embedding]))
-                    if (i + 1) % 1000 == 0:
-                        elmo_embedding = get_elmo_embeddings(sess,np.array(elmo_tokens),np.array(elmo_tokens_length))
-                        for j in range(0,len(elmo_embedding)):
-                            deep_contextualized_embeddings.append(np.array(pad_tokens(elmo_embedding[j],max_length)))
-                        temp_arr = np.array(deep_contextualized_embeddings)
-                        print(temp_arr.shape)
-                        elmo_tokens.clear()
-                        elmo_tokens_length.clear()
-        endtime = time.time()
-        print("Total time to generate embeddings:- ")
-        print(endtime - starttime)
-    return np.array(deep_contextualized_embeddings),np.array(y_pred),np.array(sequence_lengths)
-
-def save_state():
-    np.save('data/trained_models/generated_embeddings_train.npy',deep_contextualized_embeddings_train)
-    np.save('data/trained_models/generated_embeddings_parent_train.npy',deep_contextualized_embeddings_parent_train)
-    np.save('data/trained_models/generated_embeddings_test.npy',deep_contextualized_embeddings_test)
-    np.save('data/trained_models/generated_embeddings_parent_test.npy',deep_contextualized_embeddings_parent_test)
-    np.save('data/trained_models/x_train.npy',X_train)
-    np.save('data/trained_models/x_test.npy',X_test)
-    np.save('data/trained_models/y_train.npy',y_train)
-    np.save('data/trained_models/y_test.npy',y_test)
-
 stop_words = set(stopwords.words('english'))
 
 dictionary = []
 
 embeddings = {}
 
-elmo = hub.Module("https://tfhub.dev/google/elmo/2",trainable=True)
 
 df = pd.read_csv("data/dataset/train-balanced-sarcasm.csv")
 
@@ -284,7 +79,7 @@ sb.countplot(x='label',hue='label',data=df_new)
 
 df_new = df_new.sample(20000)
 
-df_new.shape
+print(df_new.shape)
 
 df_new.head()
 
@@ -294,24 +89,24 @@ y = df_new['label']
 X.reset_index()
 X_train,X_test,y_train,y_test = train_test_split(X,y,test_size=0.2,random_state=222)
 
-X_train.shape
+print(X_train.shape)
 
-X_train.index
+print(X_train.index)
 
-X_test.shape
+print(X_test.shape)
 
-X_test.index
+print(X_test.index)
 
 df_new_parent = df_new['parent_comment']
 X_train_parent,X_test_parent,_,_ = train_test_split(df_new_parent,y,test_size=0.2,random_state=222)
 
-X_train_parent.shape
+print(X_train_parent.shape)
 
-X_train_parent.index
+print(X_train_parent.index)
 
-X_test_parent.shape
+print(X_test_parent.shape)
 
-X_test_parent.index
+print(X_test_parent.index)
 
 deep_contextualized_embeddings_train,y_pred_train,sequence_lengths_train = get_deep_contextualized_embeddings(X_train,y_train,get_max_length(X_train))
 
