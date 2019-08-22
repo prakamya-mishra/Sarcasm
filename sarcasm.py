@@ -17,7 +17,6 @@ dictionary = []
 
 embeddings = {}
 
-
 df = pd.read_csv("data/dataset/train-balanced-sarcasm.csv")
 
 df_new = df[['parent_comment','comment','label']]
@@ -79,16 +78,26 @@ deep_contextualized_embeddings_parent_test.shape
 #Hyperparameters for the model
 #Hyperparameter tuning required
 num_classes = 2
-word_embedding_size = 0 #For now as we are currently not using Glove
+word_embedding_size = 0 #For now as we are not using Glove
 elmo_embedding_size = 1024
 batch_size = 1000
-epochs = 10 #To be increased as the size of the dataset increases(current size being considered:- 10000 data points (8000 - Train,2000 - Test))
-init_learning_rate = 0.01 #To be changed to exponentially decreasing value based on epochs passed
+epochs = 10
+init_learning_rate = 0.01
 decay_rate =  0.96
 decay_steps = 8
+dropout_rate = 0.1
+feed_forward_op_size = 2048
+num_attention_heads = 10
+num_encoder_blocks = 6
+
+embedding_size = word_embedding_size + elmo_embedding_size
 
 #Currenlty not using concatenation of Glove with ELMO
 tf.reset_default_graph()
+#Add support for transformer (Contextualized word embeddings with bidirectional self attention) here.
+trans = Transformer(get_max_length(X_train), embedding_size, feed_forward_op_size, dropout_rate, num_encoder_blocks, num_attention_heads)
+trans_parent = Transformer(get_max_length(X_train_parent), embedding_size, feed_forward_op_size, dropout_ratem, num_encoder_blocks, num_attention_heads)
+#Contextualized word embeddings with bidirectional self attention processed using LSTM.
 bilstm = BiLSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
 bilstm_parent = BiLSTM(num_classes,word_embeddings_size,elmo_embedding_size,batch_size,epochs,init_learning,decay_rate,decay_steps)
 with tf.variable_scope('softmax',reuse=tf.AUTO_REUSE):
@@ -116,15 +125,24 @@ with tf.Session() as sess:
             y_train_parent_batch = y_train_parent[i * batch_size : min((i + 1) * batch_size),X_train.shape[0]]
             sequence_lengths_parent_batch = sequence_lengths_parent_train[i * batch_size : min((i + 1) * batch_size,len(sequence_lengths_parent_train))]
             fetches = {
+            'enc_input': trans.enc_input,
+            'enc_input_parent': trans_parent.enc_input
+            }
+            feed_dict = {
+            trans.x: X_train_batch,
+            trans_parent.x: X_train_parent_batch
+            }
+            resp = sess.run(fetches, feed_dict)
+            fetches = {
                 'cost': cost,
                 'train_step': train_step,
                 'global_step': global_step        
             }
             feed_dict = {
-                bilstm.X : X_train_batch,
+                bilstm.X : resp['enc_input'],
                 bilstm.y : y_train_batch,
                 bilstm.sequence_lengths : sequence_lengths_batch,
-                bilstm_parent.X : X_train_parent_batch,
+                bilstm_parent.X : resp['enc_input_parent'],
                 bilstm_parent.y : y_train_parent_batch,
                 bilstm_parent.sequence_lengths : sequence_lengths_parent_batch
             }

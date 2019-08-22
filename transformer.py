@@ -3,29 +3,25 @@ import tensorflow as tf
 
 class Transformer:
     
-    def __init__(self, embedding_size, max_sen_len, dim_k, dim_q, dim_feed_for, dim_model, dropout_rate, num_enc_blocks, num_att_heads):
-        self.x = tf.placeholder(shape=[None, max_sent_len, embedding_size])
-        self.embedding_size = embedding_size
+    def __init__(self, max_sen_len, dim_model, dim_feed_for, dropout_rate, num_enc_blocks, num_att_heads):
+        self.x = tf.placeholder(shape=[None, max_sent_len, dim_model])
         self.max_sent_len = max_sent_len
-        self.dim_k = dim_k
-        self.dim_q = dim_q
         self.dim_feed_for = dim_feed_for
         self.dim_model = self.dim_model
         self.dropout_rate = dropout_rate
         self.num_enc_blocks = num_enc_blocks
         self.num_att_heads = num_att_heads
         
-    def encode(self, x):
+    def encode(self):
         with tf.variable_scope('transformer_encoder', reuse=tf.AUTO_REUSE):
-            enc_input = self.x
-            enc_input *= self.dim_model**0.5
-            enc_input += self.positional_encoding(enc_input, self.max_sen_len)
-            enc_input = tf.layers.dropout(enc_input, self.dropout_rate)
+            self.enc_input = self.x
+            self.enc_input *= self.dim_model**0.5
+            self.enc_input += self.positional_encoding(enc_input, self.max_sen_len)
+            self.enc_input = tf.layers.dropout(enc_input, self.dropout_rate)
             for i in range(self.num_enc_blocks):
                 with tf.variable_scope('encoder ' + str(i), reuse=tf.AUTO_REUSE):
-                    enc_input = self.multihead_attention(enc_input)
-                    enc_input = self.feed_forward(enc_input, [self.dim_feed_for, self.dim_model])
-            return enc_input
+                    self.enc_input = self.multihead_attention(enc_input)
+                    self.enc_input = self.feed_forward(enc_input, [self.dim_feed_for, self.dim_model])
     
     def multihead_attention(self, enc_input):
         dim_model = enc_input.get_shape().as_list()[-1]

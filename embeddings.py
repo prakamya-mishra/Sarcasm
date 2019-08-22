@@ -61,7 +61,7 @@ def get_deep_contextualized_embeddings(X,y,max_length):
                     elmo_tokens.append(preprocessed_tokens)
                     elmo_tokens_length.append(len(preprocessed_tokens))
                     #deep_contextualized_embeddings.append(np.hstack([word_embedding,elmo_embedding]))
-                    if (i + 1) % 10000 == 0 or i == len(X.index) - 1:
+                    if (i + 1) % 1000 == 0 or i == len(X.index) - 1:
                         elmo_embedding = get_elmo_embeddings(sess,np.array(elmo_tokens),np.array(elmo_tokens_length))
                         for j in range(0,len(elmo_embedding)):
                             deep_contextualized_embeddings.append(np.array(pad_tokens(elmo_embedding[j],max_length)))
