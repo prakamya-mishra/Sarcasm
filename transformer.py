@@ -89,7 +89,6 @@ class Transformer:
             outputs = gamma * normalized + beta
             return outputs
             
-            
     def positional_encoding(self, enc_input, max_len):
         E = enc_input.get_shape().as_list()[-1]
         N, T = tf.shape(enc_input)[0], tf.shape(enc_input)[1]
@@ -106,5 +105,3 @@ class Transformer:
             #Masking by default
             outputs = tf.where(tf.equal(enc_input, 0), enc_input, outputs)
             return tf.to_float(outputs)
-            
-        
