@@ -1,3 +1,8 @@
+import time
+import tensorflow as tf
+
+from utils import load_model
+
 class BiLSTM():
     
     def __init__(self,num_classes,elmo_embed_size,embed_size,batch_size,epochs,init_learning_rate,decay_steps,decay_rate):
