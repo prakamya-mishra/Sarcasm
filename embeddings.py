@@ -5,7 +5,7 @@ import tensorflow as tf
 import tensorflow_hub as hub
 from numpy import nan
 
-from preprocess import preprocess, pad_tokens
+from preprocess import pad_tokens
 
 elmo = hub.Module("https://tfhub.dev/google/elmo/2",trainable=True)
 
@@ -38,7 +38,6 @@ def get_elmo_embeddings(sess,tokens_input,tokens_length):
     return sess.run(embeddings)
 
 def get_deep_contextualized_embeddings(X,y,max_length):
-    deep_contextualized_embeddings = []
     sequence_lengths = []
     elmo_tokens = []
     elmo_tokens_length = []
@@ -49,8 +48,8 @@ def get_deep_contextualized_embeddings(X,y,max_length):
         sess.run(tf.tables_initializer())
         starttime = time.time()
         for i in range(0,len(X.index)):
-            if(X[i:i+1][X.index[i]] is not nan):
-                preprocessed_tokens = preprocess(X[i:i+1][X.index[i]])
+            if(X[i:i+1][X.index[i]] is not nan or len(X[i:i+1][X.index[i]]) > 0):
+                preprocessed_tokens = X[i:i+1][X.index[i]]
                 if(len(preprocessed_tokens) < max_length + 1):
                     sequence_lengths.append(len(preprocessed_tokens))
                     y_pred.append(y[i:i+1][y.index[i]])
@@ -61,15 +60,10 @@ def get_deep_contextualized_embeddings(X,y,max_length):
                     elmo_tokens.append(preprocessed_tokens)
                     elmo_tokens_length.append(len(preprocessed_tokens))
                     #deep_contextualized_embeddings.append(np.hstack([word_embedding,elmo_embedding]))
-                    if (i + 1) % 1000 == 0 or i == len(X.index) - 1:
-                        elmo_embedding = get_elmo_embeddings(sess,np.array(elmo_tokens),np.array(elmo_tokens_length))
-                        for j in range(0,len(elmo_embedding)):
-                            deep_contextualized_embeddings.append(np.array(pad_tokens(elmo_embedding[j],max_length)))
-                        temp_arr = np.array(deep_contextualized_embeddings)
-                        print(temp_arr.shape)
-                        elmo_tokens.clear()
-                        elmo_tokens_length.clear()
+        print(len(elmo_tokens))
+        elmo_embedding = get_elmo_embeddings(sess,np.array(elmo_tokens),np.array(elmo_tokens_length))
+        print(len(elmo_embedding))
         endtime = time.time()
         print("Total time to generate embeddings:- ")
         print(endtime - starttime)
-    return np.array(deep_contextualized_embeddings),np.array(y_pred),np.array(sequence_lengths)
+    return np.array(elmo_embedding),np.array(y_pred),np.array(sequence_lengths)

@@ -9,7 +9,7 @@ import math
 
 from bilstm import BiLSTM
 from transformer import Transformer
-from preprocess import get_max_length, get_max_length_parent
+from preprocess import get_max_length, get_max_length_parent, preprocess
 from embeddings import get_deep_contextualized_embeddings
 from utils import save_state
 
@@ -23,36 +23,32 @@ df_new = df[['parent_comment','comment','label']]
 
 sb.countplot(x='label',hue='label',data=df_new)
 
-df_new = df_new.sample(20000)
+df_new = df_new.sample(10)
 
 print(df_new.shape)
 
 df_new.head()
 
+for idx, row in df_new.iterrows():
+    df_new.at[idx, 'comment'] = preprocess(row['comment'])
+    df_new.at[idx, 'parent_comment'] = preprocess(row['parent_comment'])
+
 #Remove nan here
 X = df_new['comment']
 y = df_new['label']
-X.reset_index()
+
 X_train,X_test,y_train,y_test = train_test_split(X,y,test_size=0.2,random_state=222)
 
-print(X_train.shape)
+print(len(X_train))
 
-print(X_train.index)
-
-print(X_test.shape)
-
-print(X_test.index)
+print(len(y_train))
 
 df_new_parent = df_new['parent_comment']
 X_train_parent,X_test_parent,_,_ = train_test_split(df_new_parent,y,test_size=0.2,random_state=222)
 
-print(X_train_parent.shape)
+print(len(X_train_parent))
 
-print(X_train_parent.index)
-
-print(X_test_parent.shape)
-
-print(X_test_parent.index)
+print(len(X_test_parent))
 
 deep_contextualized_embeddings_train,y_pred_train,sequence_lengths_train = get_deep_contextualized_embeddings(X_train,y_train,get_max_length(X_train))
 
@@ -96,7 +92,7 @@ embedding_size = word_embedding_size + elmo_embedding_size
 tf.reset_default_graph()
 #Add support for transformer (Contextualized word embeddings with bidirectional self attention) here.
 trans = Transformer(get_max_length(X_train), embedding_size, feed_forward_op_size, dropout_rate, num_encoder_blocks, num_attention_heads)
-trans_parent = Transformer(get_max_length(X_train_parent), embedding_size, feed_forward_op_size, dropout_ratem, num_encoder_blocks, num_attention_heads)
+trans_parent = Transformer(get_max_length(X_train_parent), embedding_size, feed_forward_op_size, dropout_rate, num_encoder_blocks, num_attention_heads)
 #Contextualized word embeddings with bidirectional self attention processed using LSTM.
 bilstm = BiLSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
 bilstm_parent = BiLSTM(num_classes,word_embeddings_size,elmo_embedding_size,batch_size,epochs,init_learning,decay_rate,decay_steps)
