@@ -17,25 +17,25 @@ class Transformer:
         with tf.variable_scope('transformer_encoder', reuse=tf.AUTO_REUSE):
             self.enc_input = self.x
             self.enc_input *= self.dim_model**0.5
-            self.enc_input += self.positional_encoding(self.enc_input, self.max_sen_len)
+            self.enc_input += self.positional_encoding(self.max_sent_len)
             self.enc_input = tf.layers.dropout(self.enc_input, self.dropout_rate)
             for i in range(self.num_enc_blocks):
-                with tf.variable_scope('encoder ' + str(i), reuse=tf.AUTO_REUSE):
-                    self.enc_input = self.multihead_attention(enc_input)
-                    self.enc_input = self.feed_forward(enc_input, [self.dim_feed_for, self.dim_model])
+                with tf.variable_scope('encoder_' + str(i), reuse=tf.AUTO_REUSE):
+                    self.enc_input = self.multihead_attention()
+                    self.enc_input = self.feed_forward(self.enc_input, [self.dim_feed_for, self.dim_model])
     
-    def multihead_attention(self, enc_input):
-        dim_model = enc_input.get_shape().as_list()[-1]
+    def multihead_attention(self):
+        dim_model = self.enc_input.get_shape().as_list()[-1]
         with tf.variable_scope('multi_head_attention', reuse=tf.AUTO_REUSE):
-            Q = tf.layers.dense(enc_input, d_model, use_bias=False)
-            K = tf.layers.dense(enc_input, d_model, use_bias=False)
-            V = tf.layers.dense(enc_input, d_model, use_bias=False)
-            Q = tf.concat(tf.split(Q, self.num_heads, axis=2), axis=0)
-            K = tf.concat(tf.split(K, self.num_heads, axis=2), axis=0)
-            V = tf.concat(tf.split(V, self.num_heads, axis=2), axis=0)
+            Q = tf.layers.dense(self.enc_input, dim_model, use_bias=False)
+            K = tf.layers.dense(self.enc_input, dim_model, use_bias=False)
+            V = tf.layers.dense(self.enc_input, dim_model, use_bias=False)
+            Q = tf.concat(tf.split(Q, self.num_att_heads, axis=2), axis=0)
+            K = tf.concat(tf.split(K, self.num_att_heads, axis=2), axis=0)
+            V = tf.concat(tf.split(V, self.num_att_heads, axis=2), axis=0)
             outputs = self.scaled_dot_product_attention(Q, K, V)
-            outputs = tf.concat(tf.split(outputs, self.num_heads, axis=0), axis=2)
-            outputs += enc_input
+            outputs = tf.concat(tf.split(outputs, self.num_att_heads, axis=0), axis=2)
+            outputs += self.enc_input
             outputs = self.layer_normalization(outputs)
             return outputs
     
@@ -48,7 +48,7 @@ class Transformer:
             outputs = tf.nn.softmax(outputs)
             attention = tf.transpose(outputs, [0, 2, 1])
             outputs = self.mask(outputs, Q, K)
-            outputs = tf.layers.dense(outputs, rate=self.dropout_rate)
+            outputs = tf.layers.dropout(outputs, rate=self.dropout_rate, training=True)
             outputs = tf.matmul(outputs, V)
             return outputs
     
@@ -86,9 +86,9 @@ class Transformer:
             outputs = gamma * normalized + beta
             return outputs
             
-    def positional_encoding(self, enc_input, max_len):
-        E = enc_input.get_shape().as_list()[-1]
-        N, T = tf.shape(enc_input)[0], tf.shape(enc_input)[1]
+    def positional_encoding(self, max_len):
+        E = self.enc_input.get_shape().as_list()[-1]
+        N, T = tf.shape(self.enc_input)[0], tf.shape(self.enc_input)[1]
         with tf.variable_scope('positional_encoding', reuse=tf.AUTO_REUSE):
             position_ind = tf.tile(tf.expand_dims(tf.range(T), 0), [N, 1])
             position_enc = np.array([
@@ -100,5 +100,5 @@ class Transformer:
             position_enc = tf.convert_to_tensor(position_enc, tf.float32)
             outputs = tf.nn.embedding_lookup(position_enc, position_ind)
             #Masking by default
-            outputs = tf.where(tf.equal(enc_input, 0), enc_input, outputs)
+            outputs = tf.where(tf.equal(self.enc_input, 0), self.enc_input, outputs)
             return tf.to_float(outputs)

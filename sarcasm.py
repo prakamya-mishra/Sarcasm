@@ -83,7 +83,7 @@ decay_rate =  0.96
 decay_steps = 8
 dropout_rate = 0.1
 feed_forward_op_size = 2048
-num_attention_heads = 10
+num_attention_heads = 8 #Should divide embedding_size
 num_encoder_blocks = 6
 
 embedding_size = word_embedding_size + elmo_embedding_size
@@ -129,6 +129,8 @@ with tf.Session() as sess:
             trans.x: X_train_batch,
             trans_parent.x: X_train_parent_batch
             }
+            for i in X_train_batch.index:
+                print(len(X_train_parent_batch[i]))
             resp = sess.run(fetches, feed_dict)
             fetches = {
                 'cost': cost,
