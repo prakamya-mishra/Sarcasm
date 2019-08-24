@@ -11,13 +11,14 @@ class Transformer:
         self.dropout_rate = dropout_rate
         self.num_enc_blocks = num_enc_blocks
         self.num_att_heads = num_att_heads
+        self.encode()
         
     def encode(self):
         with tf.variable_scope('transformer_encoder', reuse=tf.AUTO_REUSE):
             self.enc_input = self.x
             self.enc_input *= self.dim_model**0.5
-            self.enc_input += self.positional_encoding(enc_input, self.max_sen_len)
-            self.enc_input = tf.layers.dropout(enc_input, self.dropout_rate)
+            self.enc_input += self.positional_encoding(self.enc_input, self.max_sen_len)
+            self.enc_input = tf.layers.dropout(self.enc_input, self.dropout_rate)
             for i in range(self.num_enc_blocks):
                 with tf.variable_scope('encoder ' + str(i), reuse=tf.AUTO_REUSE):
                     self.enc_input = self.multihead_attention(enc_input)

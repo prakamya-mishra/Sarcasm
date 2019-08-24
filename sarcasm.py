@@ -95,11 +95,12 @@ trans = Transformer(get_max_length(X_train), embedding_size, feed_forward_op_siz
 trans_parent = Transformer(get_max_length(X_train_parent), embedding_size, feed_forward_op_size, dropout_rate, num_encoder_blocks, num_attention_heads)
 #Contextualized word embeddings with bidirectional self attention processed using LSTM.
 bilstm = BiLSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
-bilstm_parent = BiLSTM(num_classes,word_embeddings_size,elmo_embedding_size,batch_size,epochs,init_learning,decay_rate,decay_steps)
+bilstm_parent = BiLSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
 with tf.variable_scope('softmax',reuse=tf.AUTO_REUSE):
-    softmax_w = tf.get_variable('W',initializer=tf.truncated_normal_initializer(shape=[4 * hidden_size,1]),dtype=tf.float32)
-    softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0,shape=[1]),dtype=tf.float32)
-final_state = tf.concat([bilstm.final_state,bilstm_parent.final_state],0)
+    softmax_w = tf.get_variable('W', shape=[2 * (elmo_embedding_size + word_embedding_size),1], initializer=tf.truncated_normal_initializer(), dtype=tf.float32)
+    softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0), shape=[1], dtype=tf.float32)
+
+final_state = tf.concat([bilstm.final_state, bilstm_parent.final_state],0)
 logit = tf.matmul(final_state,softmax_w) + softmax_b
 cost = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logit,labels=bilstm.y)
 global_step = tf.Variable(0,name='global_step',trainable=False)
@@ -118,7 +119,7 @@ with tf.Session() as sess:
             y_train_batch = y_train[i * batch_size : min((i + 1) * batch_size,len(y_train))]
             sequence_lengths_batch = sequence_lengths_train[i * batch_size : min((i + 1) * batch_size,len(sequence_lengths_train))]
             X_train_parent_batch = X_train_parent[i * batch_size : min((i + 1) * batch_size,X_train.shape[0])]
-            y_train_parent_batch = y_train_parent[i * batch_size : min((i + 1) * batch_size),X_train.shape[0]]
+            y_train_parent_batch = y_train[i * batch_size : min((i + 1) * batch_size,len(y_train))]
             sequence_lengths_parent_batch = sequence_lengths_parent_train[i * batch_size : min((i + 1) * batch_size,len(sequence_lengths_parent_train))]
             fetches = {
             'enc_input': trans.enc_input,
