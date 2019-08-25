@@ -23,7 +23,7 @@ df_new = df[['parent_comment','comment','label']]
 
 sb.countplot(x='label',hue='label',data=df_new)
 
-df_new = df_new.sample(10)
+df_new = df_new.sample(20)
 
 print(df_new.shape)
 
@@ -97,11 +97,13 @@ trans_parent = Transformer(get_max_length(X_train_parent), embedding_size, feed_
 bilstm = BiLSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
 bilstm_parent = BiLSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
 with tf.variable_scope('softmax',reuse=tf.AUTO_REUSE):
-    softmax_w = tf.get_variable('W', shape=[2 * (elmo_embedding_size + word_embedding_size),1], initializer=tf.truncated_normal_initializer(), dtype=tf.float32)
+    softmax_w = tf.get_variable('W', shape=[2 * (elmo_embedding_size + word_embedding_size), 1], initializer=tf.truncated_normal_initializer(), dtype=tf.float32)
     softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0), shape=[1], dtype=tf.float32)
 
 final_state = tf.concat([bilstm.final_state, bilstm_parent.final_state],0)
+print(final_state.get_shape().as_list())
 logit = tf.matmul(final_state,softmax_w) + softmax_b
+print(logit.get_shape().as_list())
 cost = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logit,labels=bilstm.y)
 global_step = tf.Variable(0,name='global_step',trainable=False)
 learning_rate = tf.train.exponential_decay(init_learning_rate,global_step,decay_steps,
@@ -111,26 +113,28 @@ gradients = optimizer.compute_gradients(cost)
 train_step = optimizer.apply_gradients(gradients,global_step=global_step)
 with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
+    writer = tf.compat.v1.summary.FileWriter('./data/graphs', sess.graph)
     for j in range(0,epochs):
         starttime = time.time()
         epoch_cost = 0
         for i in range(0,math.ceil(X_train.shape[0]/batch_size)):
-            X_train_batch = X_train[i * batch_size : min((i + 1) * batch_size,X_train.shape[0])]
-            y_train_batch = y_train[i * batch_size : min((i + 1) * batch_size,len(y_train))]
+            X_train_batch = deep_contextualized_embeddings_train[i * batch_size : min((i + 1) * batch_size,X_train.shape[0])]
+            y_train_batch = y_pred_train[i * batch_size : min((i + 1) * batch_size,len(y_train))]
             sequence_lengths_batch = sequence_lengths_train[i * batch_size : min((i + 1) * batch_size,len(sequence_lengths_train))]
-            X_train_parent_batch = X_train_parent[i * batch_size : min((i + 1) * batch_size,X_train.shape[0])]
-            y_train_parent_batch = y_train[i * batch_size : min((i + 1) * batch_size,len(y_train))]
+            X_train_parent_batch = deep_contextualized_embeddings_parent_train[i * batch_size : min((i + 1) * batch_size,X_train.shape[0])]
+            y_train_parent_batch = y_pred_train[i * batch_size : min((i + 1) * batch_size,len(y_train))]
             sequence_lengths_parent_batch = sequence_lengths_parent_train[i * batch_size : min((i + 1) * batch_size,len(sequence_lengths_parent_train))]
             fetches = {
             'enc_input': trans.enc_input,
             'enc_input_parent': trans_parent.enc_input
             }
+            print(X_train_batch)
+            for i in range(0,len(X_train_batch)):
+                print(len(X_train_batch[i]))
             feed_dict = {
             trans.x: X_train_batch,
             trans_parent.x: X_train_parent_batch
             }
-            for i in X_train_batch.index:
-                print(len(X_train_parent_batch[i]))
             resp = sess.run(fetches, feed_dict)
             fetches = {
                 'cost': cost,
@@ -138,12 +142,11 @@ with tf.Session() as sess:
                 'global_step': global_step        
             }
             feed_dict = {
-                bilstm.X : resp['enc_input'],
-                bilstm.y : y_train_batch,
-                bilstm.sequence_lengths : sequence_lengths_batch,
-                bilstm_parent.X : resp['enc_input_parent'],
-                bilstm_parent.y : y_train_parent_batch,
-                bilstm_parent.sequence_lengths : sequence_lengths_parent_batch
+            bilstm.X : resp['enc_input'],
+            bilstm.y : y_train_batch,
+            bilstm.sequence_lengths : sequence_lengths_batch,
+            bilstm_parent.X : resp['enc_input_parent'],
+            bilstm_parent.sequence_lengths : sequence_lengths_parent_batch
             }
             resp = sess.run(fetches,feed_dict)
             print('Global Step:- ')
