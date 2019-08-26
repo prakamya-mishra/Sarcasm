@@ -5,8 +5,6 @@ class Transformer:
     
     def __init__(self, max_sent_len, dim_model, dim_feed_for, dropout_rate, num_enc_blocks, num_att_heads):
         self.x = tf.placeholder(shape=[None, max_sent_len, dim_model], dtype=tf.float32)
-        print('Transformer shape:')
-        print(self.x.get_shape().as_list())
         self.max_sent_len = max_sent_len
         self.dim_feed_for = dim_feed_for
         self.dim_model = dim_model

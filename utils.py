@@ -45,7 +45,8 @@ def add_to_dictionary(tokens):
         if token not in dictionary:
             dictionary.append(token)
             
-def save_state():
+def save_state(deep_contextualized_embeddings_train, deep_contextualized_embeddings_parent_train, 
+deep_contextualized_embeddings_test, deep_contextualized_embeddings_parent_test, X_train, X_test, y_train, y_test):
     np.save('data/trained_models/generated_embeddings_train.npy',deep_contextualized_embeddings_train)
     np.save('data/trained_models/generated_embeddings_parent_train.npy',deep_contextualized_embeddings_parent_train)
     np.save('data/trained_models/generated_embeddings_test.npy',deep_contextualized_embeddings_test)

@@ -97,14 +97,13 @@ trans_parent = Transformer(get_max_length(X_train_parent), embedding_size, feed_
 bilstm = BiLSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
 bilstm_parent = BiLSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
 with tf.variable_scope('softmax',reuse=tf.AUTO_REUSE):
-    softmax_w = tf.get_variable('W', shape=[2 * (elmo_embedding_size + word_embedding_size), 1], initializer=tf.truncated_normal_initializer(), dtype=tf.float32)
-    softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0), shape=[1], dtype=tf.float32)
+    softmax_w = tf.get_variable('W', shape=[2 * feed_forward_op_size, num_classes], initializer=tf.truncated_normal_initializer(), dtype=tf.float32)
+    softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0), shape=[num_classes], dtype=tf.float32)
 
-final_state = tf.concat([bilstm.final_state, bilstm_parent.final_state],0)
-print(final_state.get_shape().as_list())
+final_state = tf.concat([bilstm.final_state, bilstm_parent.final_state],1)
 logit = tf.matmul(final_state,softmax_w) + softmax_b
-print(logit.get_shape().as_list())
-cost = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logit,labels=bilstm.y)
+cost = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=bilstm.y, logits=logit)
+cost = tf.reduce_mean(cost)
 global_step = tf.Variable(0,name='global_step',trainable=False)
 learning_rate = tf.train.exponential_decay(init_learning_rate,global_step,decay_steps,
                                                 decay_rate,staircase=True)
@@ -128,9 +127,6 @@ with tf.Session() as sess:
             'enc_input': trans.enc_input,
             'enc_input_parent': trans_parent.enc_input
             }
-            print(X_train_batch)
-            for i in range(0,len(X_train_batch)):
-                print(len(X_train_batch[i]))
             feed_dict = {
             trans.x: X_train_batch,
             trans_parent.x: X_train_parent_batch
@@ -157,4 +153,4 @@ with tf.Session() as sess:
         print(endtime - starttime)
         print('Epoch ' + str(j) + " cost :-")
         print(epoch_cost)
-    save_state()
+    save_state(deep_contextualized_embeddings_train, deep_contextualized_embeddings_parent_train, deep_contextualized_embeddings_test, deep_contextualized_embeddings_parent_test, X_train, X_test, y_train, y_test)
