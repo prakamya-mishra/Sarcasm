@@ -50,13 +50,18 @@ print(len(X_train_parent))
 
 print(len(X_test_parent))
 
-deep_contextualized_embeddings_train,y_pred_train,sequence_lengths_train = get_deep_contextualized_embeddings(X_train,y_train,get_max_length(X_train))
+train_max_length = get_max_length(X_train)
+test_max_length = get_max_length(X_test)
+train_parent_max_length = get_max_length_parent(X_train_parent, X_train.index)
+test_parent_max_length = get_max_length_parent(X_test_parent, X_test.index)
 
-deep_contextualized_embeddings_parent_train,_,sequence_lengths_parent_train = get_deep_contextualized_embeddings(X_train_parent,y_train,get_max_length_parent(X_train_parent,X_train.index))
+deep_contextualized_embeddings_train,y_pred_train,sequence_lengths_train = get_deep_contextualized_embeddings(X_train,y_train,train_max_length)
 
-deep_contextualized_embeddings_test,y_pred_test,sequence_lengths_test = get_deep_contextualized_embeddings(X_test,y_test,get_max_length(X_test))
+deep_contextualized_embeddings_parent_train,_,sequence_lengths_parent_train = get_deep_contextualized_embeddings(X_train_parent,y_train,train_parent_max_length)
 
-deep_contextualized_embeddings_parent_test,_,sequence_lengths_parent_test = get_deep_contextualized_embeddings(X_test_parent,y_test,get_max_length(X_test_parent))
+deep_contextualized_embeddings_test,y_pred_test,sequence_lengths_test = get_deep_contextualized_embeddings(X_test,y_test,test_max_length)
+
+deep_contextualized_embeddings_parent_test,_,sequence_lengths_parent_test = get_deep_contextualized_embeddings(X_test_parent,y_test,test_parent_max_length)
 
 deep_contextualized_embeddings_train = np.array(deep_contextualized_embeddings_train)
 deep_contextualized_embeddings_parent_train = np.array(deep_contextualized_embeddings_parent_train)

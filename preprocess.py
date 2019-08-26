@@ -75,10 +75,9 @@ def get_max_length(X):
     max_length = 0
     index = 0
     for i in X.index:
-        if(len(X[i]) < 30):
-            if max_length < len(X[i]):
-                max_length = len(X[i])
-                index = i
+        if max_length < len(X[i]):
+            max_length = len(X[i])
+            index = i
     return max_length
     
 def get_max_length_parent(X_train,index):
