@@ -23,15 +23,23 @@ df_new = df[['parent_comment','comment','label']]
 
 sb.countplot(x='label',hue='label',data=df_new)
 
-df_new = df_new.sample(20)
+#df_new = df_new.sample(512)
 
 print(df_new.shape)
 
 df_new.head()
 
+count = 0
+starttime = time.time()
 for idx, row in df_new.iterrows():
+    count += 1
     df_new.at[idx, 'comment'] = preprocess(row['comment'])
     df_new.at[idx, 'parent_comment'] = preprocess(row['parent_comment'])
+    if count % 10000 == 0:
+        print(count)
+endtime = time.time()
+print('Time to preprocess: ')
+print(endtime - starttime)
 
 #Remove nan here
 X = df_new['comment']
@@ -54,6 +62,9 @@ train_max_length = get_max_length(X_train)
 test_max_length = get_max_length(X_test)
 train_parent_max_length = get_max_length_parent(X_train_parent, X_train.index)
 test_parent_max_length = get_max_length_parent(X_test_parent, X_test.index)
+
+print(train_max_length)
+print(train_parent_max_length)
 
 deep_contextualized_embeddings_train,y_pred_train,sequence_lengths_train = get_deep_contextualized_embeddings(X_train,y_train,train_max_length)
 
@@ -81,9 +92,9 @@ deep_contextualized_embeddings_parent_test.shape
 num_classes = 2
 word_embedding_size = 0 #For now as we are not using Glove
 elmo_embedding_size = 1024
-batch_size = 1000
+batch_size = 128
 epochs = 10
-init_learning_rate = 0.01
+init_learning_rate = 0.001
 decay_rate =  0.96
 decay_steps = 8
 dropout_rate = 0.1

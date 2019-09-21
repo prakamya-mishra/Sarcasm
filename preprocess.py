@@ -28,32 +28,11 @@ def remove_stopwords(tokens):
             tokens_wo_stopwords.append(tokens[i].lower())
     return tokens_wo_stopwords
 
-def remove_stopwords(tokens):
-    tokens_wo_stopwords = []
-    for i in range(0,len(tokens)):
-        if tokens[i].lower() not in stop_words:
-            tokens_wo_stopwords.append(tokens[i].lower())
-    return tokens_wo_stopwords
-
-def get_pos_tag(token):
-    pos_tag = nltk.pos_tag([token])[0][1]
-    if pos_tag.startswith('N'):
-        return wordnet.NOUN
-    elif pos_tag.startswith('V'):
-        return wordnet.VERB
-    elif pos_tag.startswith('J'):
-        return wordnet.ADJ
-    elif pos_tag.startswith('R'):
-        return wordnet.ADV
-    else:
-        return wordnet.NOUN
-
 def lemmatize(tokens):
     lemmatizer = WordNetLemmatizer()
     for i in range(0,len(tokens)):
         tokens[i] = lemmatizer.lemmatize(tokens[i],pos=str(get_pos_tag(tokens[i])))
     return tokens
-
 
 def preprocess(sentence):
     if sentence is not nan and len(sentence) > 0:
