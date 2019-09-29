@@ -67,27 +67,3 @@ def preprocess(dataset, max_comment_length, max_parent_comment_length):
     if count == count_parent and count == dataset.shape[0]:
         print('Data preprocessing successfull')
     return dataset, comment_seq_length, parent_comment_seq_length
-
-def pad_tokens(tokens,max_length):
-    zeros = np.zeros(len(tokens[0]))
-    while len(tokens) < max_length:
-        tokens = np.vstack([tokens,zeros])
-    return tokens
-
-def get_max_length(X):
-    max_length = 0
-    index = 0
-    for i in X.index:
-        if max_length < len(X[i]):
-            max_length = len(X[i])
-            index = i
-    return max_length
-    
-def get_max_length_parent(X_train,index):
-    max_length = 0
-    ind = 0
-    for i in range(0,len(index)):
-        if max_length < len(X_train[index[i]]):
-            max_length = len(X_train[index[i]])
-            ind = i
-    return max_length

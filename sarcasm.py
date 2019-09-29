@@ -1,12 +1,12 @@
 import pandas as pd
 import numpy as np
-from numpy import nan
 import tensorflow as tf
 import tensorflow_hub as tf_hub
 import time
 import math
 
 from preprocess import preprocess
+from utils import get_rows, sample_training_data
 from bilstm import BiLSTM
 from transformer import Transformer
 
@@ -35,24 +35,6 @@ num_attention_heads = 8 #Should divide embedding_size
 num_encoder_blocks = 6
 
 embedding_size = word_embedding_size + elmo_embedding_size
-
-def get_rows(dataset, max_comment_length, max_parent_comment_length):
-    comments = []
-    parent_comments = []
-    labels = []
-    for index, row in dataset.iterrows():
-        if(len(row[COMMENT_LABEL]) <= max_comment_length and len(row[PARENT_COMMENT_LABEL]) <= max_parent_comment_length 
-            and row[COMMENT_LABEL] is not nan and row[PARENT_COMMENT_LABEL] is not nan 
-            and len(row[COMMENT_LABEL]) > 0 and len(row[PARENT_COMMENT_LABEL]) > 0):
-            comments.append(row[COMMENT_LABEL])
-            parent_comments.append(row[PARENT_COMMENT_LABEL])
-            labels.append(row['label'])
-    return pd.DataFrame({COMMENT_LABEL: comments, PARENT_COMMENT_LABEL: parent_comments, 'label': labels})
-
-def sample_training_data(processe, batch_id):
-    mask = np.random.rand(dataset.shape[0]) < TRAIN_SIZE
-    #dataset[~mask].to_csv('data/test/batch_' + str(batch_id) + ".csv")
-    return dataset[mask]
 
 dataset = pd.read_csv('data/dataset/train-balanced-sarcasm.csv')
 dataset = dataset.sample(DATASET_SIZE)
@@ -145,4 +127,3 @@ with tf.Session() as sess:
         print(epoch_endtime - epoch_starttime)
         print('Epoch cost: ')
         print(epoch_cost)
-        

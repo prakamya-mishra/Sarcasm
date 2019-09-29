@@ -1,8 +1,6 @@
 import time
 import tensorflow as tf
 
-from utils import load_model
-
 class BiLSTM():
     
     def __init__(self,num_classes,elmo_embed_size,embed_size,batch_size,epochs,init_learning_rate,decay_steps,decay_rate):
@@ -35,7 +33,6 @@ class BiLSTM():
     def test(self,X_test,y_test,sequence_lengths_test,path):
         with tf.Session() as sess:
             starttime = time.time()
-            load_model(sess,path)
             fetches = {
                 'accuracy': self.accuracy,
                 'predictions': self.predictions
