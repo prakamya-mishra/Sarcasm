@@ -13,6 +13,7 @@ from transformer import Transformer
 COMMENT_LABEL = 'comment'
 PARENT_COMMENT_LABEL = 'parent_comment'
 
+DATASET_SIZE = 10000
 CHUNKSIZE = 1000
 TRAIN_SIZE = 0.8
 MAX_COMMENT_LENGTH = 100
@@ -48,13 +49,13 @@ def get_rows(dataset, max_comment_length, max_parent_comment_length):
             labels.append(row['label'])
     return pd.DataFrame({COMMENT_LABEL: comments, PARENT_COMMENT_LABEL: parent_comments, 'label': labels})
 
-def sample_training_data(dataset, batch_id):
+def sample_training_data(processe, batch_id):
     mask = np.random.rand(dataset.shape[0]) < TRAIN_SIZE
     #dataset[~mask].to_csv('data/test/batch_' + str(batch_id) + ".csv")
     return dataset[mask]
 
 dataset = pd.read_csv('data/dataset/train-balanced-sarcasm.csv')
-dataset = dataset.sample(10000)
+dataset = dataset.sample(DATASET_SIZE)
 print(dataset.head())
 
 tf.reset_default_graph()
@@ -76,39 +77,45 @@ gradients = optimizer.compute_gradients(cost)
 train_step = optimizer.apply_gradients(gradients,global_step=global_step)
 
 with tf.Session() as sess:
+    elmo = tf_hub.Module("https://tfhub.dev/google/elmo/2",trainable=True)
     sess.run(tf.global_variables_initializer())
     sess.run(tf.tables_initializer())
-    elmo = tf_hub.Module("https://tfhub.dev/google/elmo/2",trainable=True)
-    for j in range(0,epochs):
+    for epoch in range(0,epochs):
         epoch_starttime = time.time()
         epoch_cost = 0
         chunk_id = 1
+        processed_entries = 0
         for dataset_chunk in pd.read_csv('data/dataset/train-balanced-sarcasm.csv', chunksize=CHUNKSIZE):
             chunk_starttime = time.time()
             dataset = get_rows(dataset_chunk, MAX_COMMENT_LENGTH, MAX_PARENT_COMMENT_LENGTH)
-            dataset, comment_seq_length, parent_comment_seq_length = preprocess(dataset, MAX_COMMENT_LENGTH, MAX_PARENT_COMMENT_LENGTH)
-            dataset_train = sample_training_data(dataset, chunk_id)
+            dataset_train, comment_seq_length, parent_comment_seq_length = preprocess(dataset, MAX_COMMENT_LENGTH, MAX_PARENT_COMMENT_LENGTH)
+            dataset_train = sample_training_data(dataset_train, chunk_id)
             chunk_id += 1
-            for i in range(0,math.ceil(dataset_train.shape[0]/batch_size)):
-                dataset_train_batch = dataset_train.iloc[dataset_train.index[i * batch_size: min((i + 1) * batch_size, dataset_train.shape[0])]]
+            for i in range(0,int(math.floor(dataset_train.shape[0]/batch_size))):
+                print('Low: ' + str(i * batch_size) + ' High: ' + str(min((i + 1) * batch_size, len(dataset_train.index))) + ' Size: ' + str(len(dataset_train.index)))
+                dataset_train_batch = dataset_train.loc[dataset_train.index[i * batch_size: min((i + 1) * batch_size, len(dataset_train.index))]]
                 comment_seq_length_batch = comment_seq_length[i * batch_size : min((i + 1) * batch_size,len(comment_seq_length))]
                 parent_comment_seq_length_batch = parent_comment_seq_length[i * batch_size : min((i + 1) * batch_size,len(parent_comment_seq_length))]
-                for idx, row in dataset_train_batch.iterrows():
-                    dataset_train_batch.at[idx, 'comment'] = ' '.join(row['comment'])
-                    dataset_train_batch.at[idx, 'parent_comment'] = ' '.join(row['parent_comment'])
-                comment__embeddings = elmo(inputs={"tokens": np.array(dataset_train_batch['comment']),"sequence_len": comment_seq_length_batch},signature='tokens',as_dict=True)["elmo"]
-                parent_comment_embeddings = elmo(inputs={"tokens": np.array(dataset_train_batch['parent_comment']),"sequence_len": parent_comment_seq_length_batch},signature='tokens',as_dict=True)["elmo"]
+                comment_embeddings_list = dataset_train_batch['comment'].to_list()
+                parent_comment_embeddings_list = dataset_train_batch['parent_comment'].to_list()
+                for j in range(0, len(comment_embeddings_list)):
+                    comment_embeddings_list[j] = comment_embeddings_list[j].split()
+                    parent_comment_embeddings_list[j] = parent_comment_embeddings_list[j].split()
+                comment_embeddings = np.array(comment_embeddings_list)
+                parent_comment_embeddings = np.array(parent_comment_embeddings_list)
+                comment_embeddings = elmo(inputs={"tokens": comment_embeddings,"sequence_len": comment_seq_length_batch},signature='tokens',as_dict=True)["elmo"]
+                parent_comment_embeddings = elmo(inputs={"tokens": parent_comment_embeddings,"sequence_len": parent_comment_seq_length_batch},signature='tokens',as_dict=True)["elmo"]
                 comment_embeddings = sess.run(comment_embeddings)
                 parent_comment_embeddings = sess.run(parent_comment_embeddings)
                 comment_embeddings = np.array(comment_embeddings)
                 parent_comment_embeddings = np.array(parent_comment_embeddings)
                 fetches = {
-                'enc_input': comment_embeddings,
-                'enc_input_parent': parent_comment_embeddings
+                'enc_input': trans.enc_input,
+                'enc_input_parent': trans_parent.enc_input
                 }
                 feed_dict = {
                 trans.x: comment_embeddings,
-                trans_parent.x: X_train_parent_batch
+                trans_parent.x: parent_comment_embeddings
                 }
                 resp = sess.run(fetches, feed_dict)
                 fetches = {
@@ -118,7 +125,7 @@ with tf.Session() as sess:
                 }
                 feed_dict = {
                 bilstm.X : resp['enc_input'],
-                bilstm.y : y_train_batch,
+                bilstm.y : dataset_train_batch['label'].to_list(),
                 bilstm.sequence_lengths : comment_seq_length_batch,
                 bilstm_parent.X : resp['enc_input_parent'],
                 bilstm_parent.sequence_lengths : parent_comment_seq_length_batch
@@ -130,9 +137,12 @@ with tf.Session() as sess:
             chunk_endtime = time.time()
             print('Time takes to process chunk: ') 
             print(chunk_endtime - chunk_starttime)
+            if processed_entries == DATASET_SIZE:
+                break
+            processed_entries += CHUNKSIZE
         epoch_endtime = time.time()
-        print('Time takes for epoch ' + str(j) + ': ')
-        print(epoch_endtime - epoch-starttime)
+        print('Time takes for epoch ' + str(epoch) + ': ')
+        print(epoch_endtime - epoch_starttime)
         print('Epoch cost: ')
         print(epoch_cost)
         

@@ -34,23 +34,38 @@ def lemmatize(tokens):
         tokens[i] = lemmatizer.lemmatize(tokens[i],pos=str(get_pos_tag(tokens[i])))
     return tokens
 
-def preprocess_sentence(sentence, max_length):
+def preprocess_sentence(sentence):
     processed_sentence = re.sub(r'[^a-zA-Z]', ' ', sentence)
+    processed_sentence = processed_sentence.lower().strip()
     tokens_comment = word_tokenize(processed_sentence)
     tokens_comment = remove_stopwords(tokens_comment)
     tokens_comment = lemmatize(tokens_comment)
-    for i in range(len(tokens_comment), max_length):
-        tokens_comment.append('<PAD>')
-    return tokens_comment
+    return ' '.join(tokens_comment)
     
+def pad_sentences(sentence, max_length):
+   new_sentence = sentence.split()
+   for i in range(len(new_sentence), max_length):
+       new_sentence.append('<PAD>')
+   return ' '.join(new_sentence)
+
 def preprocess(dataset, max_comment_length, max_parent_comment_length):
+    count = 0
+    count_parent = 0
     comment_seq_length = []
     parent_comment_seq_length = []
     for idx, row in dataset.iterrows():
-        dataset.at[idx, 'comment'] = preprocess_sentence(row['comment'], max_comment_length)
-        dataset.at[idx, 'parent_comment'] = preprocess_sentence(row['parent_comment'], max_parent_comment_length)
-        comment_seq_length.append(len(row['comment']))
-        parent_comment_seq_length.append(len(row['parent_comment']))
+        preprocessed_comment = preprocess_sentence(row['comment'])
+        preprocessed_parent_comment = preprocess_sentence(row['parent_comment'])
+        comment_seq_length.append(len(preprocessed_comment))
+        parent_comment_seq_length.append(len(preprocessed_parent_comment))
+        dataset.at[idx, 'comment'] = pad_sentences(preprocessed_comment, max_comment_length)
+        dataset.at[idx, 'parent_comment'] = pad_sentences(preprocessed_parent_comment, max_parent_comment_length)
+        if len(row['comment']) == max_comment_length:
+            count += 1
+        if len(row['parent_comment']) == max_parent_comment_length:
+            count_parent += 1
+    if count == count_parent and count == dataset.shape[0]:
+        print('Data preprocessing successfull')
     return dataset, comment_seq_length, parent_comment_seq_length
 
 def pad_tokens(tokens,max_length):
