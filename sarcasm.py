@@ -58,10 +58,12 @@ def get_rows(dataset, max_comment_length, max_parent_comment_length):
             labels.append(row['label'])
     return pd.DataFrame({COMMENT_LABEL: comments, PARENT_COMMENT_LABEL: parent_comments, 'label': labels})
 
-def sample_training_data(processe, batch_id):
+def sample_training_data(processe, batch_id, training=True):
+    np.random.seed(222)
     mask = np.random.rand(dataset.shape[0]) < TRAIN_SIZE
    # dataset[~mask].to_csv('data/test/batch_' + str(batch_id) + ".csv")
-    return dataset[mask]
+   
+    return dataset[mask] if training else dataset[~mask]
 
 dataset = pd.read_csv('data/dataset/train-balanced-sarcasm.csv')
 dataset = dataset.sample(DATASET_SIZE)
@@ -158,4 +160,3 @@ with tf.Session() as sess:
         base_firebase_ref.push().set(str(epoch_endtime - epoch_starttime))
         base_firebase_ref.push().set('Epoch cost: ')
         base_firebase_ref.push().set(str(epoch_cost))
-        
