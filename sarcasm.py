@@ -89,75 +89,78 @@ train_step = optimizer.apply_gradients(gradients,global_step=global_step)
 
 base_firebase_ref = db.reference(BASE_REF)
 
-with tf.Session() as sess:
-    base_firebase_ref.delete()
-    elmo = tf_hub.Module("https://tfhub.dev/google/elmo/2",trainable=True)
-    sess.run(tf.global_variables_initializer())
-    sess.run(tf.tables_initializer())
-    for epoch in range(0,epochs):
-        epoch_starttime = time.time()
-        epoch_cost = 0
-        chunk_id = 1
-        global_step_count = 0
-        processed_entries = 0
-        for dataset_chunk in pd.read_csv('data/dataset/train-balanced-sarcasm.csv', chunksize=CHUNKSIZE):
-            processed_entries += CHUNKSIZE
-            if processed_entries > DATASET_SIZE:
-                break
-            chunk_starttime = time.time()
-            dataset = get_rows(dataset_chunk, MAX_COMMENT_LENGTH, MAX_PARENT_COMMENT_LENGTH)
-            dataset_train, comment_seq_length, parent_comment_seq_length = preprocess(dataset, MAX_COMMENT_LENGTH, MAX_PARENT_COMMENT_LENGTH)
-            dataset_train = sample_training_data(dataset_train, chunk_id)
-            chunk_id += 1
-            for i in range(0,int(math.floor(dataset_train.shape[0]/batch_size))):
-                base_firebase_ref.push().set('Low: ' + str(i * batch_size) + ' High: ' + str(min((i + 1) * batch_size, len(dataset_train.index))) + ' Size: ' + str(len(dataset_train.index)))
-                dataset_train_batch = dataset_train.loc[dataset_train.index[i * batch_size: min((i + 1) * batch_size, len(dataset_train.index))]]
-                comment_seq_length_batch = comment_seq_length[i * batch_size : min((i + 1) * batch_size,len(comment_seq_length))]
-                parent_comment_seq_length_batch = parent_comment_seq_length[i * batch_size : min((i + 1) * batch_size,len(parent_comment_seq_length))]
-                comment_embeddings_list = dataset_train_batch['comment'].to_list()
-                parent_comment_embeddings_list = dataset_train_batch['parent_comment'].to_list()
-                for j in range(0, len(comment_embeddings_list)):
-                    comment_embeddings_list[j] = comment_embeddings_list[j].split()
-                    parent_comment_embeddings_list[j] = parent_comment_embeddings_list[j].split()
-                comment_embeddings = np.array(comment_embeddings_list)
-                parent_comment_embeddings = np.array(parent_comment_embeddings_list)
-                comment_embeddings = elmo(inputs={"tokens": comment_embeddings,"sequence_len": comment_seq_length_batch},signature='tokens',as_dict=True)["elmo"]
-                parent_comment_embeddings = elmo(inputs={"tokens": parent_comment_embeddings,"sequence_len": parent_comment_seq_length_batch},signature='tokens',as_dict=True)["elmo"]
-                comment_embeddings = sess.run(comment_embeddings)
-                parent_comment_embeddings = sess.run(parent_comment_embeddings)
-                comment_embeddings = np.array(comment_embeddings)
-                parent_comment_embeddings = np.array(parent_comment_embeddings)
-                fetches = {
-                'enc_input': trans.enc_input,
-                'enc_input_parent': trans_parent.enc_input
-                }
-                feed_dict = {
-                trans.x: comment_embeddings,
-                trans_parent.x: parent_comment_embeddings
-                }
-                resp = sess.run(fetches, feed_dict)
-                fetches = {
-                    'cost': cost,
-                    'train_step': train_step,
-                    'global_step': global_step        
-                }
-                feed_dict = {
-                bilstm.X : resp['enc_input'],
-                bilstm.y : dataset_train_batch['label'].to_list(),
-                bilstm.sequence_lengths : comment_seq_length_batch,
-                bilstm_parent.X : resp['enc_input_parent'],
-                bilstm_parent.sequence_lengths : parent_comment_seq_length_batch
-                }
-                resp = sess.run(fetches,feed_dict)
-                global_step_count = resp['global_step']
-                epoch_cost += resp['cost']
-            chunk_endtime = time.time()
-            base_firebase_ref.push().set('Time takes to process chunk: ') 
-            base_firebase_ref.push().set(str(chunk_endtime - chunk_starttime))
-            base_firebase_ref.push().set('Current global step: ')
-            base_firebase_ref.push().set(str(global_step_count))
-        epoch_endtime = time.time()
-        base_firebase_ref.push().set('Time takes for epoch ' + str(epoch) + ': ')
-        base_firebase_ref.push().set(str(epoch_endtime - epoch_starttime))
-        base_firebase_ref.push().set('Epoch cost: ')
-        base_firebase_ref.push().set(str(epoch_cost))
+try:
+    with tf.Session() as sess:
+        base_firebase_ref.delete()
+        elmo = tf_hub.Module("https://tfhub.dev/google/elmo/2",trainable=True)
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.tables_initializer())
+        for epoch in range(0,epochs):
+            epoch_starttime = time.time()
+            epoch_cost = 0
+            chunk_id = 1
+            global_step_count = 0
+            processed_entries = 0
+            for dataset_chunk in pd.read_csv('data/dataset/train-balanced-sarcasm.csv', chunksize=CHUNKSIZE):
+                processed_entries += CHUNKSIZE
+                if processed_entries > DATASET_SIZE:
+                    break
+                chunk_starttime = time.time()
+                dataset = get_rows(dataset_chunk, MAX_COMMENT_LENGTH, MAX_PARENT_COMMENT_LENGTH)
+                dataset_train, comment_seq_length, parent_comment_seq_length = preprocess(dataset, MAX_COMMENT_LENGTH, MAX_PARENT_COMMENT_LENGTH)
+                dataset_train = sample_training_data(dataset_train, chunk_id)
+                chunk_id += 1
+                for i in range(0,int(math.floor(dataset_train.shape[0]/batch_size))):
+                    base_firebase_ref.push().set('Low: ' + str(i * batch_size) + ' High: ' + str(min((i + 1) * batch_size, len(dataset_train.index))) + ' Size: ' + str(len(dataset_train.index)))
+                    dataset_train_batch = dataset_train.loc[dataset_train.index[i * batch_size: min((i + 1) * batch_size, len(dataset_train.index))]]
+                    comment_seq_length_batch = comment_seq_length[i * batch_size : min((i + 1) * batch_size,len(comment_seq_length))]
+                    parent_comment_seq_length_batch = parent_comment_seq_length[i * batch_size : min((i + 1) * batch_size,len(parent_comment_seq_length))]
+                    comment_embeddings_list = dataset_train_batch['comment'].to_list()
+                    parent_comment_embeddings_list = dataset_train_batch['parent_comment'].to_list()
+                    for j in range(0, len(comment_embeddings_list)):
+                        comment_embeddings_list[j] = comment_embeddings_list[j].split()
+                        parent_comment_embeddings_list[j] = parent_comment_embeddings_list[j].split()
+                    comment_embeddings = np.array(comment_embeddings_list)
+                    parent_comment_embeddings = np.array(parent_comment_embeddings_list)
+                    comment_embeddings = elmo(inputs={"tokens": comment_embeddings,"sequence_len": comment_seq_length_batch},signature='tokens',as_dict=True)["elmo"]
+                    parent_comment_embeddings = elmo(inputs={"tokens": parent_comment_embeddings,"sequence_len": parent_comment_seq_length_batch},signature='tokens',as_dict=True)["elmo"]
+                    comment_embeddings = sess.run(comment_embeddings)
+                    parent_comment_embeddings = sess.run(parent_comment_embeddings)
+                    comment_embeddings = np.array(comment_embeddings)
+                    parent_comment_embeddings = np.array(parent_comment_embeddings)
+                    fetches = {
+                    'enc_input': trans.enc_input,
+                    'enc_input_parent': trans_parent.enc_input
+                    }
+                    feed_dict = {
+                    trans.x: comment_embeddings,
+                    trans_parent.x: parent_comment_embeddings
+                    }
+                    resp = sess.run(fetches, feed_dict)
+                    fetches = {
+                        'cost': cost,
+                        'train_step': train_step,
+                        'global_step': global_step        
+                    }
+                    feed_dict = {
+                    bilstm.X : resp['enc_input'],
+                    bilstm.y : dataset_train_batch['label'].to_list(),
+                    bilstm.sequence_lengths : comment_seq_length_batch,
+                    bilstm_parent.X : resp['enc_input_parent'],
+                    bilstm_parent.sequence_lengths : parent_comment_seq_length_batch
+                    }
+                    resp = sess.run(fetches,feed_dict)
+                    global_step_count = resp['global_step']
+                    epoch_cost += resp['cost']
+                chunk_endtime = time.time()
+                base_firebase_ref.push().set('Time takes to process chunk: ') 
+                base_firebase_ref.push().set(str(chunk_endtime - chunk_starttime))
+                base_firebase_ref.push().set('Current global step: ')
+                base_firebase_ref.push().set(str(global_step_count))
+            epoch_endtime = time.time()
+            base_firebase_ref.push().set('Time takes for epoch ' + str(epoch) + ': ')
+            base_firebase_ref.push().set(str(epoch_endtime - epoch_starttime))
+            base_firebase_ref.push().set('Epoch cost: ')
+            base_firebase_ref.push().set(str(epoch_cost))
+except Exception as exception:
+    base_firebase_ref.push().set(str(exception))
