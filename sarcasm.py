@@ -27,6 +27,7 @@ CHUNKSIZE = 5000
 TRAIN_SIZE = 0.8
 MAX_COMMENT_LENGTH = 100
 MAX_PARENT_COMMENT_LENGTH = 100
+RANDOM_SEED = 222
 
 #Hyperparameters for the model
 #Hyperparameter tuning required
@@ -58,11 +59,10 @@ def get_rows(dataset, max_comment_length, max_parent_comment_length):
             labels.append(row['label'])
     return pd.DataFrame({COMMENT_LABEL: comments, PARENT_COMMENT_LABEL: parent_comments, 'label': labels})
 
-def sample_training_data(processe, batch_id, training=True):
-    np.random.seed(222)
+def sample_training_data(dataset, batch_id, training=True):
+    np.random.seed(RANDOM_SEED)
     mask = np.random.rand(dataset.shape[0]) < TRAIN_SIZE
    # dataset[~mask].to_csv('data/test/batch_' + str(batch_id) + ".csv")
-   
     return dataset[mask] if training else dataset[~mask]
 
 dataset = pd.read_csv('data/dataset/train-balanced-sarcasm.csv')
@@ -90,6 +90,7 @@ train_step = optimizer.apply_gradients(gradients,global_step=global_step)
 base_firebase_ref = db.reference(BASE_REF)
 
 with tf.Session() as sess:
+    base_firebase_ref.delete()
     elmo = tf_hub.Module("https://tfhub.dev/google/elmo/2",trainable=True)
     sess.run(tf.global_variables_initializer())
     sess.run(tf.tables_initializer())
