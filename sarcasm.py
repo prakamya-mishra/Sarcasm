@@ -1,20 +1,29 @@
 import pandas as pd
 import numpy as np
+from numpy import nan
 import tensorflow as tf
 import tensorflow_hub as tf_hub
 import time
 import math
 
 from preprocess import preprocess
-from utils import get_rows, sample_training_data
 from bilstm import BiLSTM
 from transformer import Transformer
 
+import firebase_admin
+from firebase_admin import credentials, db
+
+cred = credentials.Certificate('serviceAccount.json')
+firebase_admin.initialize_app(cred, {
+'databaseURL': 'https://original-dryad-251711.firebaseio.com/'
+})
+
+BASE_REF = '/'
 COMMENT_LABEL = 'comment'
 PARENT_COMMENT_LABEL = 'parent_comment'
 
 DATASET_SIZE = 10000
-CHUNKSIZE = 1000
+CHUNKSIZE = 5000
 TRAIN_SIZE = 0.8
 MAX_COMMENT_LENGTH = 100
 MAX_PARENT_COMMENT_LENGTH = 100
@@ -24,9 +33,9 @@ MAX_PARENT_COMMENT_LENGTH = 100
 num_classes = 2
 word_embedding_size = 0 #For now as we are not using Glove
 elmo_embedding_size = 1024
-batch_size = 64
-epochs = 10
-init_learning_rate = 0.001
+batch_size = 256
+epochs = 5
+init_learning_rate = 0.0001
 decay_rate =  0.96
 decay_steps = 8
 dropout_rate = 0.1
@@ -35,6 +44,24 @@ num_attention_heads = 8 #Should divide embedding_size
 num_encoder_blocks = 6
 
 embedding_size = word_embedding_size + elmo_embedding_size
+
+def get_rows(dataset, max_comment_length, max_parent_comment_length):
+    comments = []
+    parent_comments = []
+    labels = []
+    for index, row in dataset.iterrows():
+        if(len(row[COMMENT_LABEL]) <= max_comment_length and len(row[PARENT_COMMENT_LABEL]) <= max_parent_comment_length 
+            and row[COMMENT_LABEL] is not nan and row[PARENT_COMMENT_LABEL] is not nan 
+            and len(row[COMMENT_LABEL]) > 0 and len(row[PARENT_COMMENT_LABEL]) > 0):
+            comments.append(row[COMMENT_LABEL])
+            parent_comments.append(row[PARENT_COMMENT_LABEL])
+            labels.append(row['label'])
+    return pd.DataFrame({COMMENT_LABEL: comments, PARENT_COMMENT_LABEL: parent_comments, 'label': labels})
+
+def sample_training_data(processe, batch_id):
+    mask = np.random.rand(dataset.shape[0]) < TRAIN_SIZE
+   # dataset[~mask].to_csv('data/test/batch_' + str(batch_id) + ".csv")
+    return dataset[mask]
 
 dataset = pd.read_csv('data/dataset/train-balanced-sarcasm.csv')
 dataset = dataset.sample(DATASET_SIZE)
@@ -58,6 +85,8 @@ optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
 gradients = optimizer.compute_gradients(cost)
 train_step = optimizer.apply_gradients(gradients,global_step=global_step)
 
+base_firebase_ref = db.reference(BASE_REF)
+
 with tf.Session() as sess:
     elmo = tf_hub.Module("https://tfhub.dev/google/elmo/2",trainable=True)
     sess.run(tf.global_variables_initializer())
@@ -66,15 +95,19 @@ with tf.Session() as sess:
         epoch_starttime = time.time()
         epoch_cost = 0
         chunk_id = 1
+        global_step_count = 0
         processed_entries = 0
         for dataset_chunk in pd.read_csv('data/dataset/train-balanced-sarcasm.csv', chunksize=CHUNKSIZE):
+            processed_entries += CHUNKSIZE
+            if processed_entries > DATASET_SIZE:
+                break
             chunk_starttime = time.time()
             dataset = get_rows(dataset_chunk, MAX_COMMENT_LENGTH, MAX_PARENT_COMMENT_LENGTH)
             dataset_train, comment_seq_length, parent_comment_seq_length = preprocess(dataset, MAX_COMMENT_LENGTH, MAX_PARENT_COMMENT_LENGTH)
             dataset_train = sample_training_data(dataset_train, chunk_id)
             chunk_id += 1
             for i in range(0,int(math.floor(dataset_train.shape[0]/batch_size))):
-                print('Low: ' + str(i * batch_size) + ' High: ' + str(min((i + 1) * batch_size, len(dataset_train.index))) + ' Size: ' + str(len(dataset_train.index)))
+                base_firebase_ref.push().set('Low: ' + str(i * batch_size) + ' High: ' + str(min((i + 1) * batch_size, len(dataset_train.index))) + ' Size: ' + str(len(dataset_train.index)))
                 dataset_train_batch = dataset_train.loc[dataset_train.index[i * batch_size: min((i + 1) * batch_size, len(dataset_train.index))]]
                 comment_seq_length_batch = comment_seq_length[i * batch_size : min((i + 1) * batch_size,len(comment_seq_length))]
                 parent_comment_seq_length_batch = parent_comment_seq_length[i * batch_size : min((i + 1) * batch_size,len(parent_comment_seq_length))]
@@ -113,17 +146,16 @@ with tf.Session() as sess:
                 bilstm_parent.sequence_lengths : parent_comment_seq_length_batch
                 }
                 resp = sess.run(fetches,feed_dict)
-                print('Global Step:- ')
-                print(resp['global_step'])
+                global_step_count = resp['global_step']
                 epoch_cost += resp['cost']
             chunk_endtime = time.time()
-            print('Time takes to process chunk: ') 
-            print(chunk_endtime - chunk_starttime)
-            if processed_entries == DATASET_SIZE:
-                break
-            processed_entries += CHUNKSIZE
+            base_firebase_ref.push().set('Time takes to process chunk: ') 
+            base_firebase_ref.push().set(str(chunk_endtime - chunk_starttime))
+            base_firebase_ref.push().set('Current global step: ')
+            base_firebase_ref.push().set(str(global_step_count))
         epoch_endtime = time.time()
-        print('Time takes for epoch ' + str(epoch) + ': ')
-        print(epoch_endtime - epoch_starttime)
-        print('Epoch cost: ')
-        print(epoch_cost)
+        base_firebase_ref.push().set('Time takes for epoch ' + str(epoch) + ': ')
+        base_firebase_ref.push().set(str(epoch_endtime - epoch_starttime))
+        base_firebase_ref.push().set('Epoch cost: ')
+        base_firebase_ref.push().set(str(epoch_cost))
+        
