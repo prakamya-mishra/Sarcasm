@@ -30,6 +30,7 @@ TRAIN_SIZE = 0.8
 MAX_COMMENT_LENGTH = 100
 MAX_PARENT_COMMENT_LENGTH = 100
 RANDOM_SEED = 222
+MODEL_CHECKPOINT_DURATION = 1
 
 #Hyperparameters for the model
 #Hyperparameter tuning required
@@ -66,7 +67,7 @@ def get_rows(dataset, max_comment_length, max_parent_comment_length):
 def sample_training_data(dataset, batch_id, training=True):
     np.random.seed(RANDOM_SEED)
     mask = np.random.rand(dataset.shape[0]) < TRAIN_SIZE
-   # dataset[~mask].to_csv('data/test/batch_' + str(batch_id) + ".csv")
+    dataset[~mask].to_csv('../data/test/batch_' + str(batch_id) + ".csv")
     return dataset[mask] if training else dataset[~mask]
 
 def train(debug):
@@ -161,6 +162,9 @@ def train(debug):
                 log(str(epoch_endtime - epoch_starttime), debug)
                 log('Epoch cost: ', debug)
                 log(str(epoch_cost), debug)
+                if(epoch % MODEL_CHECKPOINT_DURATION == 0 or epoch == epochs - 1):
+                    saver = tf.train.Saver()
+                    saver.save(sess, '../data/trained_models/model', global_step=global_step_count)
     except Exception as exception:
         log(str(exception), debug)
     
