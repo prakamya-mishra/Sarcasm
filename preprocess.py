@@ -56,14 +56,15 @@ def preprocess(dataset, max_comment_length, max_parent_comment_length):
     for idx, row in dataset.iterrows():
         preprocessed_comment = preprocess_sentence(row['comment'])
         preprocessed_parent_comment = preprocess_sentence(row['parent_comment'])
-        comment_seq_length.append(len(preprocessed_comment))
-        parent_comment_seq_length.append(len(preprocessed_parent_comment))
-        dataset.at[idx, 'comment'] = pad_sentences(preprocessed_comment, max_comment_length)
-        dataset.at[idx, 'parent_comment'] = pad_sentences(preprocessed_parent_comment, max_parent_comment_length)
-        if len(row['comment']) == max_comment_length:
-            count += 1
-        if len(row['parent_comment']) == max_parent_comment_length:
-            count_parent += 1
+        if(isinstance(preprocessed_comment, str) and isinstance(preprocessed_parent_comment, str)):
+            comment_seq_length.append(len(preprocessed_comment))
+            parent_comment_seq_length.append(len(preprocessed_parent_comment))
+            dataset.at[idx, 'comment'] = pad_sentences(preprocessed_comment, max_comment_length)
+            dataset.at[idx, 'parent_comment'] = pad_sentences(preprocessed_parent_comment, max_parent_comment_length)
+            if len(row['comment']) == max_comment_length:
+                count += 1
+            if len(row['parent_comment']) == max_parent_comment_length:
+                count_parent += 1
     if count == count_parent and count == dataset.shape[0]:
         print('Data preprocessing successfull')
     return dataset, comment_seq_length, parent_comment_seq_length
