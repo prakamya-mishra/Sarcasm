@@ -7,6 +7,8 @@ import time
 import math
 import sys
 import getopt
+import os
+import shutil
 
 from preprocess import preprocess
 from bilstm import BiLSTM
@@ -164,7 +166,10 @@ def train(debug):
                 log(str(epoch_cost), debug)
                 if(epoch % MODEL_CHECKPOINT_DURATION == 0 or epoch == epochs - 1):
                     saver = tf.train.Saver()
-                    saver.save(sess, '../data/trained_models/model', global_step=global_step_count)
+                    if os.path.isdir('../data/trained_models/checkpoint_' + str(epoch)):
+                        shutil.rmtree('../data/trained_models/checkpoint_' + str(epoch))
+                    os.mkdir('../data/trained_models/checkpoint_' + str(epoch), 0o666)    
+                    saver.save(sess, '../data/trained_models/checkpoint_' + str(epoch) + '/model', global_step=global_step_count)
     except Exception as exception:
         log(str(exception), debug)
     
@@ -182,6 +187,10 @@ if __name__ == '__main__':
         for opt in opts:
             if opt[0] == '-d':
                 debug = True
+        if not os.path.isdir('../data'):
+            os.mkdir('../data')
+            os.mkdir('../data/test')
+            os.mkdir('../data/trained_models')
         train(debug)
     except getopt.GetoptError as exception:
         print(exception)
