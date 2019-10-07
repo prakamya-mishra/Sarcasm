@@ -26,13 +26,13 @@ BASE_REF = '/'
 COMMENT_LABEL = 'comment'
 PARENT_COMMENT_LABEL = 'parent_comment'
 
-DATASET_SIZE = 1000
-CHUNKSIZE = 1000
+DATASET_SIZE = 100000
+CHUNKSIZE = 10000
 TRAIN_SIZE = 0.8
 MAX_COMMENT_LENGTH = 100
 MAX_PARENT_COMMENT_LENGTH = 100
 RANDOM_SEED = 222
-MODEL_CHECKPOINT_DURATION = 1
+MODEL_CHECKPOINT_DURATION = 2
 
 #Hyperparameters for the model
 #Hyperparameter tuning required
@@ -40,7 +40,7 @@ num_classes = 2
 word_embedding_size = 0 #For now as we are not using Glove
 elmo_embedding_size = 1024
 batch_size = 256
-epochs = 5
+epochs = 4
 init_learning_rate = 0.0001
 decay_rate =  0.96
 decay_steps = 8
@@ -97,7 +97,7 @@ def train(debug):
             elmo = tf_hub.Module("https://tfhub.dev/google/elmo/2",trainable=True)
             sess.run(tf.global_variables_initializer())
             sess.run(tf.tables_initializer())
-            for epoch in range(0,epochs):
+            for epoch in range(1,epochs + 1):
                 epoch_starttime = time.time()
                 epoch_cost = 0
                 chunk_id = 1
@@ -164,11 +164,11 @@ def train(debug):
                 log(str(epoch_endtime - epoch_starttime), debug)
                 log('Epoch cost: ', debug)
                 log(str(epoch_cost), debug)
-                if(epoch % MODEL_CHECKPOINT_DURATION == 0 or epoch == epochs - 1):
+                if(epoch % MODEL_CHECKPOINT_DURATION == 0 or epoch == epochs):
                     saver = tf.train.Saver()
                     if os.path.isdir('../data/trained_models/checkpoint_' + str(epoch)):
                         shutil.rmtree('../data/trained_models/checkpoint_' + str(epoch))
-                    os.mkdir('../data/trained_models/checkpoint_' + str(epoch), 0o666)    
+                    os.mkdir('../data/trained_models/checkpoint_' + str(epoch))    
                     saver.save(sess, '../data/trained_models/checkpoint_' + str(epoch) + '/model', global_step=global_step_count)
     except Exception as exception:
         log(str(exception), debug)
