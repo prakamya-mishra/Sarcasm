@@ -179,9 +179,10 @@ def train(debug):
                     saver.save(sess, '../data/trained_models/checkpoint_' + str(epoch) + '/model', global_step=global_step_count)
     except Exception as exception:
         log(str(exception), debug)
-        request = service.instances().stop(project='original-dryad-251711', zone='us-east1-c', instance='1244076879085548718')
-        response = request.execute()
-        log(response, debug)
+        if not debug:
+            request = service.instances().stop(project='original-dryad-251711', zone='us-east1-c', instance='1244076879085548718')
+            response = request.execute()
+            log(response, debug)
     
 def log(message, debug):
     if debug:
