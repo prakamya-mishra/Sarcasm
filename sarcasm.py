@@ -14,8 +14,14 @@ from preprocess import preprocess
 from bilstm import BiLSTM
 from transformer import Transformer
 
+from googleapiclient import discovery
+from oauth2client.client import GoogleCredentials
+
 import firebase_admin
 from firebase_admin import credentials, db
+
+gcp_credentials = GoogleCredentials.get_application_default()
+service = discovery.build('compute', 'v1', credentials=gcp_credentials)
 
 cred = credentials.Certificate('serviceAccount.json')
 firebase_admin.initialize_app(cred, {
@@ -127,8 +133,8 @@ def train(debug):
                         parent_comment_embeddings = np.array(parent_comment_embeddings_list)
                         comment_embeddings = elmo(inputs={"tokens": comment_embeddings,"sequence_len": comment_seq_length_batch},signature='tokens',as_dict=True)["elmo"]
                         parent_comment_embeddings = elmo(inputs={"tokens": parent_comment_embeddings,"sequence_len": parent_comment_seq_length_batch},signature='tokens',as_dict=True)["elmo"]
-                        comment_embeddings = sess.run(comment_embeddings)
-                        parent_comment_embeddings = sess.run(parent_comment_embeddings)
+                        comment_embeddings = sess.run(comment_embeddings, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
+                        parent_comment_embeddings = sess.run(parent_comment_embeddings, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
                         comment_embeddings = np.array(comment_embeddings)
                         parent_comment_embeddings = np.array(parent_comment_embeddings)
                         fetches = {
@@ -139,7 +145,7 @@ def train(debug):
                         trans.x: comment_embeddings,
                         trans_parent.x: parent_comment_embeddings
                         }
-                        resp = sess.run(fetches, feed_dict)
+                        resp = sess.run(fetches, feed_dict, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
                         fetches = {
                             'cost': cost,
                             'train_step': train_step,
@@ -152,7 +158,7 @@ def train(debug):
                         bilstm_parent.X : resp['enc_input_parent'],
                         bilstm_parent.sequence_lengths : parent_comment_seq_length_batch
                         }
-                        resp = sess.run(fetches,feed_dict)
+                        resp = sess.run(fetches,feed_dict, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
                         global_step_count = resp['global_step']
                         epoch_cost += resp['cost']
                     chunk_endtime = time.time()
@@ -173,6 +179,9 @@ def train(debug):
                     saver.save(sess, '../data/trained_models/checkpoint_' + str(epoch) + '/model', global_step=global_step_count)
     except Exception as exception:
         log(str(exception), debug)
+        request = service.instances().stop(project='original-dryad-251711', zone='us-east1-c', instance='1244076879085548718')
+        response = request.execute()
+        log(response, debug)
     
 def log(message, debug):
     if debug:
