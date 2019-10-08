@@ -13,9 +13,12 @@ import shutil
 from preprocess import preprocess
 from bilstm import BiLSTM
 from transformer import Transformer
+from config import SENDGRID_API_KEY
 
 from googleapiclient import discovery
 from oauth2client.client import GoogleCredentials
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
 
 import firebase_admin
 from firebase_admin import credentials, db
@@ -179,6 +182,19 @@ def train(debug):
                     saver.save(sess, '../data/trained_models/checkpoint_' + str(epoch) + '/model', global_step=global_step_count)
     except Exception as exception:
         log(str(exception), debug)
+        message = Mail(
+        from_email='sarcasm-vm-instance@gcp.com',
+        to_emails='sk261@snu.edu.in',
+        subject='Training failed',
+        html_content='<strong>Model training failed. Check logs.</strong>'
+        )
+        try:
+            send_grid = SendGridAPIClient(SENDGRID_API_KEY)
+            response = send_grid.send(message)
+            log(str(response.status_code), debug)
+            log(response.body, debug)
+        except Exception as exception:
+            log(str(exception), debug)
         if not debug:
             request = service.instances().stop(project='original-dryad-251711', zone='us-east1-c', instance='1244076879085548718')
             response = request.execute()
