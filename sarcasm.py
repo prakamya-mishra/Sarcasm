@@ -1,13 +1,14 @@
 import pandas as pd
 import numpy as np
 from numpy import nan
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 import tensorflow as tf
 import tensorflow_hub as tf_hub
 import time
 import math
 import sys
 import getopt
-import os
 import shutil
 
 from preprocess import preprocess
