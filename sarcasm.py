@@ -83,25 +83,30 @@ def sample_training_data(dataset, batch_id, training=True):
     return dataset[mask] if training else dataset[~mask]
 
 def train(debug):
-    tf.reset_default_graph()
-    trans = Transformer(MAX_COMMENT_LENGTH, embedding_size, feed_forward_op_size, dropout_rate, num_encoder_blocks, num_attention_heads)
-    trans_parent = Transformer(MAX_PARENT_COMMENT_LENGTH, embedding_size, feed_forward_op_size, dropout_rate, num_encoder_blocks, num_attention_heads)
-    bilstm = BiLSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
-    bilstm_parent = BiLSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
-    with tf.variable_scope('softmax',reuse=tf.AUTO_REUSE):
-        softmax_w = tf.get_variable('W', shape=[2 * feed_forward_op_size, num_classes], initializer=tf.truncated_normal_initializer(), dtype=tf.float32)
-        softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0), shape=[num_classes], dtype=tf.float32)
-    final_state = tf.concat([bilstm.final_state, bilstm_parent.final_state],1)
-    logit = tf.matmul(final_state,softmax_w) + softmax_b
-    cost = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=bilstm.y, logits=logit)
-    cost = tf.reduce_mean(cost)
-    global_step = tf.Variable(0,name='global_step',trainable=False)
-    learning_rate = tf.train.exponential_decay(init_learning_rate,global_step,decay_steps, decay_rate,staircase=True)
-    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-    gradients = optimizer.compute_gradients(cost)
-    train_step = optimizer.apply_gradients(gradients,global_step=global_step)
+    with tf.device('/cpu:0'):
+        tf.reset_default_graph()
+        trans = Transformer(MAX_COMMENT_LENGTH, embedding_size, feed_forward_op_size, dropout_rate, num_encoder_blocks, num_attention_heads)
+        trans_parent = Transformer(MAX_PARENT_COMMENT_LENGTH, embedding_size, feed_forward_op_size, dropout_rate, num_encoder_blocks, num_attention_heads)
+        bilstm = BiLSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
+        bilstm_parent = BiLSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
+        with tf.variable_scope('softmax',reuse=tf.AUTO_REUSE):
+            softmax_w = tf.get_variable('W', shape=[2 * feed_forward_op_size, num_classes], initializer=tf.truncated_normal_initializer(), dtype=tf.float32)
+            softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0), shape=[num_classes], dtype=tf.float32)
+        final_state = tf.concat([bilstm.final_state, bilstm_parent.final_state],1)
+        logit = tf.matmul(final_state,softmax_w) + softmax_b
+        cost = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=bilstm.y, logits=logit)
+        cost = tf.reduce_mean(cost)
+        global_step = tf.Variable(0,name='global_step',trainable=False)
+        learning_rate = tf.train.exponential_decay(init_learning_rate,global_step,decay_steps, decay_rate,staircase=True)
+        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+        gradients = optimizer.compute_gradients(cost)
+        train_step = optimizer.apply_gradients(gradients,global_step=global_step)
     try:
-        with tf.Session() as sess:
+        with tf.Session(config=tf.ConfigProto(
+        device_count={'CPU': 16},
+        inter_op_parallelism_threads=16,
+        intra_op_parallelism_threads=1
+        )) as sess:
             if not debug:
                 base_firebase_ref.delete()
             elmo = tf_hub.Module("https://tfhub.dev/google/elmo/2",trainable=True)
