@@ -36,7 +36,7 @@ BASE_REF = '/'
 COMMENT_LABEL = 'comment'
 PARENT_COMMENT_LABEL = 'parent_comment'
 
-DATASET_SIZE = 50000
+DATASET_SIZE = 30000
 CHUNKSIZE = 10000
 TRAIN_SIZE = 0.8
 MAX_COMMENT_LENGTH = 100
@@ -49,7 +49,7 @@ MODEL_CHECKPOINT_DURATION = 2
 num_classes = 2
 word_embedding_size = 0 #For now as we are not using Glove
 elmo_embedding_size = 1024
-batch_size = 256
+batch_size = 64
 epochs = 4
 init_learning_rate = 0.0001
 decay_rate =  0.96
@@ -102,7 +102,9 @@ def train(debug):
     gradients = optimizer.compute_gradients(cost)
     train_step = optimizer.apply_gradients(gradients,global_step=global_step)
     try:
-        with tf.Session() as sess:
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        with tf.Session(config=config) as sess:
             if not debug:
                 base_firebase_ref.delete()
             elmo = tf_hub.Module("https://tfhub.dev/google/elmo/2",trainable=False)
