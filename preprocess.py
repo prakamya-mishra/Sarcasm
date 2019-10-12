@@ -68,3 +68,23 @@ def preprocess(dataset, max_comment_length, max_parent_comment_length):
     if count == count_parent and count == dataset.shape[0]:
         print('Data preprocessing successfull')
     return dataset, comment_seq_length, parent_comment_seq_length
+    
+def build_subj_lex_dict(subj_lex_file_path):
+    subj_lex_dict = {}
+    with open(subj_lex_file_path, 'r') as file:
+        lines = file.readlines()
+        for line in lines:
+            tokens = line.split()
+            word = tokens[2][6:]
+            pos = tokens[3][5:]
+            polarity = tokens[5][14:]
+            type = tokens[0][5:]
+            word_pos_dict = {pos: {
+            'polarity': polarity,
+            'type': type
+            }}
+            if word in subj_lex_dict:
+                subj_lex_dict[word].append(word_pos_dict)
+            else:
+                subj_lex_dict[word] = [word_pos_dict]
+    return subj_lex_dict
