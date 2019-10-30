@@ -15,6 +15,7 @@ from preprocess import preprocess
 from bilstm import BiLSTM
 from transformer import Transformer
 from config import SENDGRID_API_KEY
+from models import Models
 
 from googleapiclient import discovery
 from oauth2client.client import GoogleCredentials
@@ -85,16 +86,21 @@ def sample_training_data(dataset, batch_id, training=True):
 
 def train(debug):
     tf.reset_default_graph()
-    trans = Transformer(MAX_COMMENT_LENGTH, embedding_size, feed_forward_op_size, dropout_rate, num_encoder_blocks, num_attention_heads)
-    trans_parent = Transformer(MAX_PARENT_COMMENT_LENGTH, embedding_size, feed_forward_op_size, dropout_rate, num_encoder_blocks, num_attention_heads)
-    bilstm = BiLSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
-    bilstm_parent = BiLSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
-    with tf.variable_scope('softmax',reuse=tf.AUTO_REUSE):
-        softmax_w = tf.get_variable('W', shape=[2 * feed_forward_op_size, num_classes], initializer=tf.truncated_normal_initializer(), dtype=tf.float32)
+    models = Models(MAX_COMMENT_LENGTH, word_embedding_size, elmo_embedding_size)
+    output = models.linear_combination()
+    with tf.variable_scope('softmax_linear_combination', ruese=tf.AUTO_REUSE):
+        softmax_w = tf.get_variable('W', shape=[embedding_size, num_classes], initializer=tf.truncated_normal_initializer(), dtype=tf.float32)
         softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0), shape=[num_classes], dtype=tf.float32)
-    final_state = tf.concat([bilstm.final_state, bilstm_parent.final_state],1)
-    logit = tf.matmul(final_state,softmax_w) + softmax_b
-    cost = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=bilstm.y, logits=logit)
+    # trans = Transformer(MAX_COMMENT_LENGTH, embedding_size, feed_forward_op_size, dropout_rate, num_encoder_blocks, num_attention_heads)
+    # trans_parent = Transformer(MAX_PARENT_COMMENT_LENGTH, embedding_size, feed_forward_op_size, dropout_rate, num_encoder_blocks, num_attention_heads)
+    # bilstm = BiLSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
+    # bilstm_parent = BiLSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
+    # with tf.variable_scope('softmax',reuse=tf.AUTO_REUSE):
+    #     softmax_w = tf.get_variable('W', shape=[2 * feed_forward_op_size, num_classes], initializer=tf.truncated_normal_initializer(), dtype=tf.float32)
+    #     softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0), shape=[num_classes], dtype=tf.float32)
+    # final_state = tf.concat([bilstm.final_state, bilstm_parent.final_state],1)
+    logit = tf.matmul(output,softmax_w) + softmax_b
+    cost = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=models.y, logits=logit)
     cost = tf.reduce_mean(cost)
     global_step = tf.Variable(0,name='global_step',trainable=False)
     learning_rate = tf.train.exponential_decay(init_learning_rate,global_step,decay_steps, decay_rate,staircase=True)
@@ -107,7 +113,7 @@ def train(debug):
         with tf.Session(config=config) as sess:
             if not debug:
                 base_firebase_ref.delete()
-            elmo = tf_hub.Module("https://tfhub.dev/google/elmo/2",trainable=False)
+            elmo = tf_hub.Module("https://tfhub.dev/google/elmo/2",trainable=True)
             sess.run(tf.global_variables_initializer())
             sess.run(tf.tables_initializer())
             for epoch in range(1,epochs + 1):
@@ -143,27 +149,28 @@ def train(debug):
                         parent_comment_embeddings = sess.run(parent_comment_embeddings, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
                         comment_embeddings = np.array(comment_embeddings)
                         parent_comment_embeddings = np.array(parent_comment_embeddings)
-                        fetches = {
-                        'enc_input': trans.enc_input,
-                        'enc_input_parent': trans_parent.enc_input
-                        }
+                        # fetches = {
+                        # 'enc_input': trans.enc_input,
+                        # 'enc_input_parent': trans_parent.enc_input
+                        # }
+                        print(comment_embeddings)
                         feed_dict = {
-                        trans.x: comment_embeddings,
-                        trans_parent.x: parent_comment_embeddings
+                        model.X: comment_embeddings,
+                        model.X_parent: parent_comment_embeddings
                         }
-                        resp = sess.run(fetches, feed_dict, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
+                        #resp = sess.run(fetches, feed_dict, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
                         fetches = {
                             'cost': cost,
                             'train_step': train_step,
                             'global_step': global_step        
                         }
-                        feed_dict = {
-                        bilstm.X : resp['enc_input'],
-                        bilstm.y : dataset_train_batch['label'].to_list(),
-                        bilstm.sequence_lengths : comment_seq_length_batch,
-                        bilstm_parent.X : resp['enc_input_parent'],
-                        bilstm_parent.sequence_lengths : parent_comment_seq_length_batch
-                        }
+                        # feed_dict = {
+                        # bilstm.X : resp['enc_input'],
+                        # bilstm.y : dataset_train_batch['label'].to_list(),
+                        # bilstm.sequence_lengths : comment_seq_length_batch,
+                        # bilstm_parent.X : resp['enc_input_parent'],
+                        # bilstm_parent.sequence_lengths : parent_comment_seq_length_batch
+                        # }
                         resp = sess.run(fetches,feed_dict, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
                         global_step_count = resp['global_step']
                         epoch_cost += resp['cost']
