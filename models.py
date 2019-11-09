@@ -31,4 +31,4 @@ class Models:
             output_x = tf.matmul(self.X, w)
             output_x_parent = tf.matmul(self.X_parent, w)
             return tf.concat([output_x, output_x_parent], 1)
-             
+            
