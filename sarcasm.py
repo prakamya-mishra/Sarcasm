@@ -80,7 +80,7 @@ class TrainModel:
         logit = tf.matmul(self.final_state,softmax_w) + softmax_b
         return logit
         
-    def get_rows(dataset, max_comment_length, max_parent_comment_length):
+    def get_rows(self, dataset, max_comment_length, max_parent_comment_length):
         comments = []
         parent_comments = []
         labels = []
@@ -94,7 +94,7 @@ class TrainModel:
                     labels.append(row['label'])
         return pd.DataFrame({COMMENT_LABEL: comments, PARENT_COMMENT_LABEL: parent_comments, 'label': labels})
 
-    def sample_training_data(dataset, batch_id, training=True):
+    def sample_training_data(self, dataset, batch_id, training=True):
         np.random.seed(RANDOM_SEED)
         mask = np.random.rand(dataset.shape[0]) < TRAIN_SIZE
         #dataset[~mask].to_csv('../data/test/batch_' + str(batch_id) + ".csv")
@@ -210,7 +210,7 @@ class TrainModel:
 def train(debug):
     tf.reset_default_graph()
     model = TrainModel('data/dataset/train-balanced-sarcasm.csv', debug)
-    model.train('data/trained_models_gcp/checkpoint_2_new')
+    model.train('data/trained_models_gcp/checkpoint_2')
     
 def log(message, debug):
     if debug:
