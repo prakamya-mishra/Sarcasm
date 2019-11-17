@@ -70,7 +70,7 @@ class TrainModel:
     def __init__(self, dataset_path, debug):
         self.dataset_path = dataset_path
         self.debug = debug
-        self.logit = self.build_model()
+        self.build_model()
         
     def build_model(self):
         self.bilstm = BiLSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
@@ -79,8 +79,10 @@ class TrainModel:
             softmax_w = tf.get_variable('W', shape=[2 * feed_forward_op_size, num_classes], initializer=tf.truncated_normal_initializer(), dtype=tf.float32)
             softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0), shape=[num_classes], dtype=tf.float32)
         self.final_state = tf.concat([self.bilstm.final_state, self.bilstm_parent.final_state],1)
-        logit = tf.matmul(self.final_state,softmax_w) + softmax_b
-        return logit
+        self.logit = tf.matmul(self.final_state,softmax_w) + softmax_b
+        self.norm_logit = tf.nn.softmax(self.logit)
+        self.predictions = tf.cast(tf.math.argmax(self.norm_logit, axis=1), tf.int64)
+        self.accuracy = tf.reduce_mean(tf.cast(tf.equal(self.predictions, self.bilstm.y), tf.float32))
         
     def get_rows(self, dataset, max_comment_length, max_parent_comment_length):
         comments = []
@@ -182,6 +184,8 @@ class TrainModel:
                     log(str(epoch_endtime - epoch_starttime), debug)
                     log('Epoch cost: ', debug)
                     log(str(epoch_cost), debug)
+                    log('Testing model: ', debug)
+                    self.test('../data/test/test.csv')
                     if(epoch % MODEL_CHECKPOINT_DURATION == 0 or epoch == epochs):
                         saver = tf.train.Saver()
                         if os.path.isdir('../data/trained_models/checkpoint_' + str(epoch)):
@@ -210,9 +214,12 @@ class TrainModel:
                 
     def test(self, test_dataset_path, trained_model_path=None):
         predictions = []
+        accuracy = []
         test_dataset = pd.read_csv(test_dataset_path)
+        test_dataset = self.get_rows(test_dataset, MAX_COMMENT_LENGTH, MAX_PARENT_COMMENT_LENGTH)
         test_dataset, comment_seq_length, parent_comment_seq_length = preprocess(test_dataset, MAX_COMMENT_LENGTH, MAX_PARENT_COMMENT_LENGTH)
         with tf.Session() as sess:
+            elmo = tf_hub.Module("https://tfhub.dev/google/elmo/2",trainable=False)
             if (trained_model_path is not None):
                 saver = tf.train.Saver()
                 saver.restore(sess, tf.train.latest_checkpoint(trained_model_path))
@@ -235,25 +242,29 @@ class TrainModel:
                 comment_embeddings = np.array(comment_embeddings)
                 parent_comment_embeddings = np.array(parent_comment_embeddings)
                 fetches = {
-                    'logit': self.logit       
+                    'logit': self.logit,
+                    'norm_logit': self.norm_logit,
+                    'predictions': self.predictions,
+                    'accuracy': self.accuracy       
                 }
                 feed_dict = {
                 self.bilstm.X : comment_embeddings,
-                self.bilstm.y : dataset_train_batch['label'].to_list(),
                 self.bilstm.sequence_lengths : comment_seq_length_batch,
                 self.bilstm_parent.X : parent_comment_embeddings,
                 self.bilstm_parent.sequence_lengths : parent_comment_seq_length_batch
                 }
                 resp = sess.run(fetches,feed_dict, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
                 log(resp['logit'], debug)
-                predictions.extend(resp['logit'])
-            log('Model accuracy: ' + str(accuracy_score(self.bilstm.y, predictions)), debug)
+                predictions.extend(resp['predictions'])
+                accuracy.append(resp['accuracy'])
+            log('Model accuracy (accuracy_score): ' + str(accuracy_score(dataset_test_batch['label'], predictions)), debug)
+            log('Model accuracy (tf): ' + str(accuracy))
             
 def train(debug):
     tf.reset_default_graph()
     model = TrainModel('data/dataset/train-balanced-sarcasm.csv', debug)
     #model.train('data/trained_models_gcp/checkpoint_2')
-    model.test('../data/test/batch_1.csv', '../data/trained_models_gcp/checkpoint_2')
+    model.test('../data/test/test.csv', '../data/trained_models_gcp/checkpoint_2')
     
 def log(message, debug):
     if debug:

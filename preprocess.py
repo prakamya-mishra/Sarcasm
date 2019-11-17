@@ -1,3 +1,4 @@
+import pandas as pd
 import re
 import numpy as np
 import nltk
@@ -88,3 +89,10 @@ def build_subj_lex_dict(subj_lex_file_path):
             else:
                 subj_lex_dict[word] = [word_pos_dict]
     return subj_lex_dict
+
+def split_dataset():
+    dataset = pd.read_csv('data/dataset/train-balanced-sarcasm.csv')
+    dataset = dataset.sample(30000)
+    mask = np.random.rand(dataset.shape[0]) < 0.8
+    dataset[~mask].to_csv('data/dataset/test.csv')
+    dataset[mask].to_csv('data/dataset/train.csv') 
