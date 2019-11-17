@@ -5,6 +5,7 @@ import os
 #os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 import tensorflow as tf
 import tensorflow_hub as tf_hub
+from sklearn.metrics import accuracy_score
 import time
 import math
 import sys
@@ -208,32 +209,51 @@ class TrainModel:
                 log(response, debug)
                 
     def test(self, test_dataset_path, trained_model_path=None):
+        predictions = []
         test_dataset = pd.read_csv(test_dataset_path)
         test_dataset, comment_seq_length, parent_comment_seq_length = preprocess(test_dataset, MAX_COMMENT_LENGTH, MAX_PARENT_COMMENT_LENGTH)
-        comment_embeddings = elmo(inputs={"tokens": comment_embeddings,"sequence_len": comment_seq_length_batch},signature='tokens',as_dict=True)["elmo"]
-        parent_comment_embeddings = elmo(inputs={"tokens": parent_comment_embeddings,"sequence_len": parent_comment_seq_length_batch},signature='tokens',as_dict=True)["elmo"]
-        comment_embeddings = sess.run(comment_embeddings, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
-        parent_comment_embeddings = sess.run(parent_comment_embeddings, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
-        comment_embeddings = np.array(comment_embeddings)
-        parent_comment_embeddings = np.array(parent_comment_embeddings)
-        fetches = {
-            'logit': self.logit       
-        }
-        feed_dict = {
-        self.bilstm.X : comment_embeddings,
-        self.bilstm.y : dataset_train_batch['label'].to_list(),
-        self.bilstm.sequence_lengths : comment_seq_length_batch,
-        self.bilstm_parent.X : parent_comment_embeddings,
-        self.bilstm_parent.sequence_lengths : parent_comment_seq_length_batch
-        }
-        resp = sess.run(fetches,feed_dict, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
-        log(resp['logit'], debug)
-
+        with tf.Session() as sess:
+            if (trained_model_path is not None):
+                saver = tf.train.Saver()
+                saver.restore(sess, tf.train.latest_checkpoint(trained_model_path))
+            for i in range(0,int(math.floor(test_dataset.shape[0]/batch_size))):
+                log('Low: ' + str(i * batch_size) + ' High: ' + str(min((i + 1) * batch_size, len(test_dataset.index))) + ' Size: ' + str(len(test_dataset.index)), debug)
+                dataset_test_batch = test_dataset.loc[test_dataset.index[i * batch_size: min((i + 1) * batch_size, len(test_dataset.index))]]
+                comment_seq_length_batch = comment_seq_length[i * batch_size : min((i + 1) * batch_size,len(comment_seq_length))]
+                parent_comment_seq_length_batch = parent_comment_seq_length[i * batch_size : min((i + 1) * batch_size,len(parent_comment_seq_length))]
+                comment_embeddings_list = dataset_test_batch['comment'].to_list()
+                parent_comment_embeddings_list = dataset_test_batch['parent_comment'].to_list()
+                for j in range(0, len(comment_embeddings_list)):
+                    comment_embeddings_list[j] = comment_embeddings_list[j].split()
+                    parent_comment_embeddings_list[j] = parent_comment_embeddings_list[j].split()
+                comment_embeddings = np.array(comment_embeddings_list)
+                parent_comment_embeddings = np.array(parent_comment_embeddings_list)
+                comment_embeddings = elmo(inputs={"tokens": comment_embeddings,"sequence_len": comment_seq_length_batch},signature='tokens',as_dict=True)["elmo"]
+                parent_comment_embeddings = elmo(inputs={"tokens": parent_comment_embeddings,"sequence_len": parent_comment_seq_length_batch},signature='tokens',as_dict=True)["elmo"]
+                comment_embeddings = sess.run(comment_embeddings, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
+                parent_comment_embeddings = sess.run(parent_comment_embeddings, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
+                comment_embeddings = np.array(comment_embeddings)
+                parent_comment_embeddings = np.array(parent_comment_embeddings)
+                fetches = {
+                    'logit': self.logit       
+                }
+                feed_dict = {
+                self.bilstm.X : comment_embeddings,
+                self.bilstm.y : dataset_train_batch['label'].to_list(),
+                self.bilstm.sequence_lengths : comment_seq_length_batch,
+                self.bilstm_parent.X : parent_comment_embeddings,
+                self.bilstm_parent.sequence_lengths : parent_comment_seq_length_batch
+                }
+                resp = sess.run(fetches,feed_dict, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
+                log(resp['logit'], debug)
+                predictions.extend(resp['logit'])
+            log('Model accuracy: ' + str(accuracy_score(self.bilstm.y, predictions)), debug)
+            
 def train(debug):
     tf.reset_default_graph()
     model = TrainModel('data/dataset/train-balanced-sarcasm.csv', debug)
     #model.train('data/trained_models_gcp/checkpoint_2')
-    model.test('data/test/batch_1.csv', 'data/trained_models_gcp/checkpoint_2')
+    model.test('../data/test/batch_1.csv', '../data/trained_models_gcp/checkpoint_2')
     
 def log(message, debug):
     if debug:
