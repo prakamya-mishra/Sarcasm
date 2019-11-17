@@ -44,7 +44,7 @@ TRAIN_SIZE = 0.8
 MAX_COMMENT_LENGTH = 100
 MAX_PARENT_COMMENT_LENGTH = 100
 RANDOM_SEED = 222
-MODEL_CHECKPOINT_DURATION = 2
+MODEL_CHECKPOINT_DURATION = 1
 
 #Hyperparameters for the model
 #Hyperparameter tuning required
@@ -52,7 +52,7 @@ num_classes = 2
 word_embedding_size = 0 #For now as we are not using Glove
 elmo_embedding_size = 1024
 batch_size = 256
-epochs = 4
+epochs = 2
 init_learning_rate = 0.0001
 decay_rate =  0.96
 decay_steps = 8
@@ -119,9 +119,9 @@ class TrainModel:
                     saver = tf.train.Saver()
                     print(tf.train.latest_checkpoint(pretrained_model_path))
                     saver.restore(sess, tf.train.latest_checkpoint(pretrained_model_path))
-                if debug:
+                if self.debug:
                     writer = tf.summary.FileWriter('../data/graphs', sess.graph)
-                if not debug:
+                if not self.debug:
                     base_firebase_ref.delete()
                 elmo = tf_hub.Module("https://tfhub.dev/google/elmo/2",trainable=True)
                 sess.run(tf.global_variables_initializer())
@@ -142,7 +142,7 @@ class TrainModel:
                         dataset_train = self.sample_training_data(dataset_train, chunk_id)
                         chunk_id += 1
                         for i in range(0,int(math.floor(dataset_train.shape[0]/batch_size))):
-                            log('Low: ' + str(i * batch_size) + ' High: ' + str(min((i + 1) * batch_size, len(dataset_train.index))) + ' Size: ' + str(len(dataset_train.index)), debug)
+                            log('Low: ' + str(i * batch_size) + ' High: ' + str(min((i + 1) * batch_size, len(dataset_train.index))) + ' Size: ' + str(len(dataset_train.index)), self.debug)
                             dataset_train_batch = dataset_train.loc[dataset_train.index[i * batch_size: min((i + 1) * batch_size, len(dataset_train.index))]]
                             comment_seq_length_batch = comment_seq_length[i * batch_size : min((i + 1) * batch_size,len(comment_seq_length))]
                             parent_comment_seq_length_batch = parent_comment_seq_length[i * batch_size : min((i + 1) * batch_size,len(parent_comment_seq_length))]
@@ -175,16 +175,16 @@ class TrainModel:
                             global_step_count = resp['global_step']
                             epoch_cost += resp['cost']
                         chunk_endtime = time.time()
-                        log('Time takes to process chunk: ', debug) 
-                        log(str(chunk_endtime - chunk_starttime), debug)
-                        log('Current global step: ', debug)
-                        log(str(global_step_count), debug)
+                        log('Time takes to process chunk: ', self.debug) 
+                        log(str(chunk_endtime - chunk_starttime), self.debug)
+                        log('Current global step: ', self.debug)
+                        log(str(global_step_count), self.debug)
                     epoch_endtime = time.time()
-                    log('Time takes for epoch ' + str(epoch) + ': ', debug)
-                    log(str(epoch_endtime - epoch_starttime), debug)
-                    log('Epoch cost: ', debug)
-                    log(str(epoch_cost), debug)
-                    log('Testing model: ', debug)
+                    log('Time takes for epoch ' + str(epoch) + ': ', self.debug)
+                    log(str(epoch_endtime - epoch_starttime), self.debug)
+                    log('Epoch cost: ', self.debug)
+                    log(str(epoch_cost), self.debug)
+                    log('Testing model: ', self.debug)
                     self.test('../data/test/test.csv')
                     if(epoch % MODEL_CHECKPOINT_DURATION == 0 or epoch == epochs):
                         saver = tf.train.Saver()
@@ -193,8 +193,8 @@ class TrainModel:
                         os.mkdir('../data/trained_models/checkpoint_' + str(epoch))    
                         saver.save(sess, '../data/trained_models/checkpoint_' + str(epoch) + '/model', global_step=global_step_count)
         except Exception as exception:
-            log(str(exception), debug)
-            if not debug:
+            log(str(exception), self.debug)
+            if not self.debug:
                 message = Mail(
                 from_email='sarcasm-vm-instance@gcp.com',
                 to_emails='sk261@snu.edu.in',
@@ -204,13 +204,13 @@ class TrainModel:
                 try:
                     send_grid = SendGridAPIClient(SENDGRID_API_KEY)
                     response = send_grid.send(message)
-                    log(str(response.status_code), debug)
-                    log(response.body, debug)
+                    log(str(response.status_code), self.debug)
+                    log(response.body, self.debug)
                 except Exception as exception:
-                    log(str(exception), debug)
+                    log(str(exception), self.debug)
                 request = service.instances().stop(project='majestic-disk-257314', zone='us-central1-a', instance='7273726640686567037')
                 response = request.execute()
-                log(response, debug)
+                log(response, self.debug)
                 
     def test(self, test_dataset_path, trained_model_path=None):
         try:
@@ -226,7 +226,7 @@ class TrainModel:
                     saver.restore(sess, tf.train.latest_checkpoint(trained_model_path))
                 starttime = time.time()    
                 for i in range(0,int(math.floor(test_dataset.shape[0]/batch_size))):
-                    log('Low: ' + str(i * batch_size) + ' High: ' + str(min((i + 1) * batch_size, len(test_dataset.index))) + ' Size: ' + str(len(test_dataset.index)), debug)
+                    log('Low: ' + str(i * batch_size) + ' High: ' + str(min((i + 1) * batch_size, len(test_dataset.index))) + ' Size: ' + str(len(test_dataset.index)), self.debug)
                     dataset_test_batch = test_dataset.loc[test_dataset.index[i * batch_size: min((i + 1) * batch_size, len(test_dataset.index))]]
                     comment_seq_length_batch = comment_seq_length[i * batch_size : min((i + 1) * batch_size,len(comment_seq_length))]
                     parent_comment_seq_length_batch = parent_comment_seq_length[i * batch_size : min((i + 1) * batch_size,len(parent_comment_seq_length))]
@@ -257,16 +257,16 @@ class TrainModel:
                     self.bilstm_parent.sequence_lengths : parent_comment_seq_length_batch
                     }
                     resp = sess.run(fetches,feed_dict, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
-                    log(resp['logit'], debug)
+                    log(resp['logit'], self.debug)
                     predictions.extend(resp['predictions'])
                     accuracy.append(resp['accuracy'])
                 endtime = time.time()
-                log('Time taken to test: ', debug)
-                log(str(endtime - starttime), debug)    
-                log('Model accuracy (accuracy_score): ' + str(accuracy_score(test_dataset['label'].to_list(), predictions)), debug)
+                log('Time taken to test: ', self.debug)
+                log(str(endtime - starttime), self.debug)    
+                log('Model accuracy (accuracy_score): ' + str(accuracy_score(test_dataset['label'].to_list()[0:len(predictions)], predictions)), self.debug)
                 log('Model accuracy (tf): ' + str(accuracy))
         except Exception as exception:
-            log(str(exception), debug)
+            log(str(exception), self.debug)
             
 def train(debug):
     tf.reset_default_graph()
