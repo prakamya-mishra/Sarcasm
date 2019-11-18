@@ -52,7 +52,7 @@ num_classes = 2
 word_embedding_size = 0 #For now as we are not using Glove
 elmo_embedding_size = 1024
 batch_size = 256
-epochs = 4
+epochs = 5
 init_learning_rate = 0.0001
 decay_rate =  0.96
 decay_steps = 8
@@ -104,7 +104,7 @@ class TrainModel:
         #dataset[~mask].to_csv('../data/test/batch_' + str(batch_id) + ".csv")
         return dataset[mask] if training else dataset[~mask]   
         
-    def train(self, pretrained_model_path=None):
+    def train(self, notify_progress, pretrained_model_path=None):
         try:
             self.cost = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.bilstm.y, logits=self.logit)
             self.cost = tf.reduce_mean(self.cost)
@@ -137,7 +137,7 @@ class TrainModel:
                         chunk_starttime = time.time()
                         dataset = self.get_rows(dataset_chunk, MAX_COMMENT_LENGTH, MAX_PARENT_COMMENT_LENGTH)
                         dataset_train, comment_seq_length, parent_comment_seq_length = preprocess(dataset, MAX_COMMENT_LENGTH, MAX_PARENT_COMMENT_LENGTH)
-                        dataset_train = self.sample_training_data(dataset_train, chunk_id)
+                        #dataset_train = self.sample_training_data(dataset_train, chunk_id)
                         chunk_id += 1
                         for i in range(0,int(math.floor(dataset_train.shape[0]/batch_size))):
                             log('Low: ' + str(i * batch_size) + ' High: ' + str(min((i + 1) * batch_size, len(dataset_train.index))) + ' Size: ' + str(len(dataset_train.index)), self.debug)
@@ -178,12 +178,16 @@ class TrainModel:
                         log('Current global step: ', self.debug)
                         log(str(global_step_count), self.debug)
                     epoch_endtime = time.time()
-                    log('Time takes for epoch ' + str(epoch) + ': ', self.debug)
-                    log(str(epoch_endtime - epoch_starttime), self.debug)
-                    log('Epoch cost: ', self.debug)
-                    log(str(epoch_cost), self.debug)
                     log('Testing model: ', self.debug)
-                    self.test(sess, elmo, '../data/test/test.csv')
+                    test_accuracy_score, test_accuracy_tf, test_time = self.test(sess, elmo, '../data/test/test.csv')
+                    epoch_summary = 'Epoch Summary [' + str(time.time()) + '] :\n Time taken for epoch ' 
+                    epoch_summary += str(epoch) + ': \n' + str(epoch_endtime - epoch_starttime) + '\n'
+                    epoch_summary += 'Epoch cost: \n' + str(epoch_cost) + '\n' + 'Time take to test: \n' + str(test_time) + '\n'
+                    epoch_summary += 'Test results: \n' + 'Accuracy (tf): ' + str(test_accuracy_tf)
+                    epoch_summary += '\nAccuracy (accuracy_score): ' + str(test_accuracy_score) 
+                    log(epoch_summary, self.debug)
+                    if notify_progress:
+                        send_mail('Model training progress', '<strong>' + epoch_summary +  '</strong>', self.debug)
                     if(epoch % MODEL_CHECKPOINT_DURATION == 0 or epoch == epochs):
                         saver = tf.train.Saver()
                         if os.path.isdir('../data/trained_models_gcp/checkpoint_' + str(epoch)):
@@ -193,27 +197,16 @@ class TrainModel:
         except Exception as exception:
             log(str(exception), self.debug)
             if not self.debug:
-                message = Mail(
-                from_email='sarcasm-vm-instance@gcp.com',
-                to_emails='sk261@snu.edu.in',
-                subject='Training failed',
-                html_content='<strong>Model training failed. Check logs.</strong>'
-                )
-                try:
-                    send_grid = SendGridAPIClient(SENDGRID_API_KEY)
-                    response = send_grid.send(message)
-                    log(str(response.status_code), self.debug)
-                    log(response.body, self.debug)
-                except Exception as exception:
-                    log(str(exception), self.debug)
+                send_mail('Training failed', '<strong>Model training failed. Check logs.</strong><p>' + str(exception) + '</p>', self.debug)
                 request = service.instances().stop(project='majestic-disk-257314', zone='us-central1-a', instance='7273726640686567037')
                 response = request.execute()
                 log(response, self.debug)
                 
     def test(self, sess, elmo, test_dataset_path, trained_model_path=None):
+        predictions = []
+        accuracy = []
+        accuracy_score = 0
         try:
-            predictions = []
-            accuracy = []
             test_dataset = pd.read_csv(test_dataset_path)
             test_dataset = self.get_rows(test_dataset, MAX_COMMENT_LENGTH, MAX_PARENT_COMMENT_LENGTH)
             test_dataset, comment_seq_length, parent_comment_seq_length = preprocess(test_dataset, MAX_COMMENT_LENGTH, MAX_PARENT_COMMENT_LENGTH)
@@ -259,14 +252,32 @@ class TrainModel:
             log('Time taken to test: ', self.debug)
             log(str(endtime - starttime), self.debug)    
             log('Model accuracy (tf): ' + str(accuracy), self.debug)            
-            log('Model accuracy (accuracy_score): ' + str(accuracy_score(test_dataset['label'].to_list()[0:len(predictions)], predictions)), self.debug)
+            accuracy_score = accuracy_score(test_dataset['label'].to_list()[0:len(predictions)], predictions)
+            log('Model accuracy (accuracy_score): ' + str(accuracy_score), self.debug)
         except Exception as exception:
             log(str(exception), self.debug)
+            raise exception
+        return accuracy_score, accuracy, (endtime - starttime)
             
-def train(debug):
+def send_mail(subject, html_content, debug):
+    message = Mail(
+    from_email='sarcasm-vm-instance@gcp.com',
+    to_emails='sk261@snu.edu.in',
+    subject=subject,
+    html_content=html_content
+    )
+    try:
+        send_grid = SendGridAPIClient(SENDGRID_API_KEY)
+        response = send_grid.send(message)
+        log(str(response.status_code), debug)
+        log(response.body, debug)
+    except Exception as exception:
+        log(str(exception), debug)        
+            
+def train(debug, notify_progress):
     tf.reset_default_graph()
     model = TrainModel('data/dataset/train-balanced-sarcasm.csv', debug)
-    model.train()
+    model.train(notify_progress)
     
 def test(debug):
     tf.reset_default_graph()
@@ -287,15 +298,19 @@ if __name__ == '__main__':
     argv = sys.argv[1:]
     try:
         debug = False
-        opts, args = getopt.getopt(argv, 'd')
+        notify_progress = False
+        opts, args = getopt.getopt(argv, 'dp')
         for opt in opts:
             if opt[0] == '-d':
                 debug = True
+            elif opt[0] == '-p':
+                notify_progress = True
         if not os.path.isdir('../data'):
             os.mkdir('../data')
             os.mkdir('../data/test')
-            os.mkdir('../data/trained_models')
-        train(debug)
+            os.mkdir('../data/trained_models') 
+        print(notify_progress)    
+        train(debug, notify_progress)
     except getopt.GetoptError as exception:
         print(exception)
         sys.exit(2)
