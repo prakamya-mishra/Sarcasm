@@ -38,8 +38,8 @@ BASE_REF = '/'
 COMMENT_LABEL = 'comment'
 PARENT_COMMENT_LABEL = 'parent_comment'
 
-DATASET_SIZE = 30000
-CHUNKSIZE = 10000
+DATASET_SIZE = 35000
+CHUNKSIZE = 5000
 TRAIN_SIZE = 0.8
 MAX_COMMENT_LENGTH = 100
 MAX_PARENT_COMMENT_LENGTH = 100
@@ -52,7 +52,7 @@ num_classes = 2
 word_embedding_size = 0 #For now as we are not using Glove
 elmo_embedding_size = 1024
 batch_size = 256
-epochs = 2
+epochs = 4
 init_learning_rate = 0.0001
 decay_rate =  0.96
 decay_steps = 8
@@ -109,21 +109,19 @@ class TrainModel:
             self.cost = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.bilstm.y, logits=self.logit)
             self.cost = tf.reduce_mean(self.cost)
             self.global_step = tf.Variable(0,name='global_step',trainable=False)
-            self.learning_rate = tf.train.exponential_decay(init_learning_rate,self.global_step,decay_steps, decay_rate,staircase=True)
-            self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+            self.optimizer = tf.train.AdamOptimizer(learning_rate=init_learning_rate)
             self.gradients = self.optimizer.compute_gradients(self.cost)
             self.train_step = self.optimizer.apply_gradients(self.gradients,global_step=self.global_step)
             config = tf.ConfigProto(device_count={'CPU': 8})
             with tf.Session(config=config) as sess:
                 if (pretrained_model_path is not None) :
                     saver = tf.train.Saver()
-                    print(tf.train.latest_checkpoint(pretrained_model_path))
                     saver.restore(sess, tf.train.latest_checkpoint(pretrained_model_path))
                 if self.debug:
                     writer = tf.summary.FileWriter('../data/graphs', sess.graph)
                 if not self.debug:
                     base_firebase_ref.delete()
-                elmo = tf_hub.Module("https://tfhub.dev/google/elmo/2",trainable=True)
+                elmo = tf_hub.Module("https://tfhub.dev/google/elmo/2",trainable=False)
                 sess.run(tf.global_variables_initializer())
                 sess.run(tf.tables_initializer())
                 for epoch in range(1,epochs + 1):
@@ -185,13 +183,13 @@ class TrainModel:
                     log('Epoch cost: ', self.debug)
                     log(str(epoch_cost), self.debug)
                     log('Testing model: ', self.debug)
-                    self.test('../data/test/test.csv')
+                    self.test(sess, elmo, '../data/test/test.csv')
                     if(epoch % MODEL_CHECKPOINT_DURATION == 0 or epoch == epochs):
                         saver = tf.train.Saver()
-                        if os.path.isdir('../data/trained_models/checkpoint_' + str(epoch)):
-                            shutil.rmtree('../data/trained_models/checkpoint_' + str(epoch))
-                        os.mkdir('../data/trained_models/checkpoint_' + str(epoch))    
-                        saver.save(sess, '../data/trained_models/checkpoint_' + str(epoch) + '/model', global_step=global_step_count)
+                        if os.path.isdir('../data/trained_models_gcp/checkpoint_' + str(epoch)):
+                            shutil.rmtree('../data/trained_models_gcp/checkpoint_' + str(epoch))
+                        os.mkdir('../data/trained_models_gcp/checkpoint_' + str(epoch))    
+                        saver.save(sess, '../data/trained_models_gcp/checkpoint_' + str(epoch) + '/model', global_step=self.global_step)
         except Exception as exception:
             log(str(exception), self.debug)
             if not self.debug:
@@ -212,67 +210,72 @@ class TrainModel:
                 response = request.execute()
                 log(response, self.debug)
                 
-    def test(self, test_dataset_path, trained_model_path=None):
+    def test(self, sess, elmo, test_dataset_path, trained_model_path=None):
         try:
             predictions = []
             accuracy = []
             test_dataset = pd.read_csv(test_dataset_path)
             test_dataset = self.get_rows(test_dataset, MAX_COMMENT_LENGTH, MAX_PARENT_COMMENT_LENGTH)
             test_dataset, comment_seq_length, parent_comment_seq_length = preprocess(test_dataset, MAX_COMMENT_LENGTH, MAX_PARENT_COMMENT_LENGTH)
-            with tf.Session() as sess:
-                elmo = tf_hub.Module("https://tfhub.dev/google/elmo/2",trainable=False)
-                if (trained_model_path is not None):
-                    saver = tf.train.Saver()
-                    saver.restore(sess, tf.train.latest_checkpoint(trained_model_path))
-                starttime = time.time()    
-                for i in range(0,int(math.floor(test_dataset.shape[0]/batch_size))):
-                    log('Low: ' + str(i * batch_size) + ' High: ' + str(min((i + 1) * batch_size, len(test_dataset.index))) + ' Size: ' + str(len(test_dataset.index)), self.debug)
-                    dataset_test_batch = test_dataset.loc[test_dataset.index[i * batch_size: min((i + 1) * batch_size, len(test_dataset.index))]]
-                    comment_seq_length_batch = comment_seq_length[i * batch_size : min((i + 1) * batch_size,len(comment_seq_length))]
-                    parent_comment_seq_length_batch = parent_comment_seq_length[i * batch_size : min((i + 1) * batch_size,len(parent_comment_seq_length))]
-                    comment_embeddings_list = dataset_test_batch['comment'].to_list()
-                    parent_comment_embeddings_list = dataset_test_batch['parent_comment'].to_list()
-                    for j in range(0, len(comment_embeddings_list)):
-                        comment_embeddings_list[j] = comment_embeddings_list[j].split()
-                        parent_comment_embeddings_list[j] = parent_comment_embeddings_list[j].split()
-                    comment_embeddings = np.array(comment_embeddings_list)
-                    parent_comment_embeddings = np.array(parent_comment_embeddings_list)
-                    comment_embeddings = elmo(inputs={"tokens": comment_embeddings,"sequence_len": comment_seq_length_batch},signature='tokens',as_dict=True)["elmo"]
-                    parent_comment_embeddings = elmo(inputs={"tokens": parent_comment_embeddings,"sequence_len": parent_comment_seq_length_batch},signature='tokens',as_dict=True)["elmo"]
-                    comment_embeddings = sess.run(comment_embeddings, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
-                    parent_comment_embeddings = sess.run(parent_comment_embeddings, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
-                    comment_embeddings = np.array(comment_embeddings)
-                    parent_comment_embeddings = np.array(parent_comment_embeddings)
-                    fetches = {
-                        'logit': self.logit,
-                        'norm_logit': self.norm_logit,
-                        'predictions': self.predictions,
-                        'accuracy': self.accuracy       
-                    }
-                    feed_dict = {
-                    self.bilstm.X : comment_embeddings,
-                    self.bilstm.y : dataset_test_batch['label'].to_list(),
-                    self.bilstm.sequence_lengths : comment_seq_length_batch,
-                    self.bilstm_parent.X : parent_comment_embeddings,
-                    self.bilstm_parent.sequence_lengths : parent_comment_seq_length_batch
-                    }
-                    resp = sess.run(fetches,feed_dict, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
-                    log(resp['logit'], self.debug)
-                    predictions.extend(resp['predictions'])
-                    accuracy.append(resp['accuracy'])
-                endtime = time.time()
-                log('Time taken to test: ', self.debug)
-                log(str(endtime - starttime), self.debug)    
-                log('Model accuracy (accuracy_score): ' + str(accuracy_score(test_dataset['label'].to_list()[0:len(predictions)], predictions)), self.debug)
-                log('Model accuracy (tf): ' + str(accuracy))
+            if (trained_model_path is not None):
+                saver = tf.train.Saver()
+                saver.restore(sess, tf.train.latest_checkpoint(trained_model_path))
+            starttime = time.time()    
+            for i in range(0,int(math.floor(test_dataset.shape[0]/batch_size))):
+                log('Low: ' + str(i * batch_size) + ' High: ' + str(min((i + 1) * batch_size, len(test_dataset.index))) + ' Size: ' + str(len(test_dataset.index)), self.debug)
+                dataset_test_batch = test_dataset.loc[test_dataset.index[i * batch_size: min((i + 1) * batch_size, len(test_dataset.index))]]
+                comment_seq_length_batch = comment_seq_length[i * batch_size : min((i + 1) * batch_size,len(comment_seq_length))]
+                parent_comment_seq_length_batch = parent_comment_seq_length[i * batch_size : min((i + 1) * batch_size,len(parent_comment_seq_length))]
+                comment_embeddings_list = dataset_test_batch['comment'].to_list()
+                parent_comment_embeddings_list = dataset_test_batch['parent_comment'].to_list()
+                for j in range(0, len(comment_embeddings_list)):
+                    comment_embeddings_list[j] = comment_embeddings_list[j].split()
+                    parent_comment_embeddings_list[j] = parent_comment_embeddings_list[j].split()
+                comment_embeddings = np.array(comment_embeddings_list)
+                parent_comment_embeddings = np.array(parent_comment_embeddings_list)
+                comment_embeddings = elmo(inputs={"tokens": comment_embeddings,"sequence_len": comment_seq_length_batch},signature='tokens',as_dict=True)["elmo"]
+                parent_comment_embeddings = elmo(inputs={"tokens": parent_comment_embeddings,"sequence_len": parent_comment_seq_length_batch},signature='tokens',as_dict=True)["elmo"]
+                comment_embeddings = sess.run(comment_embeddings, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
+                parent_comment_embeddings = sess.run(parent_comment_embeddings, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
+                comment_embeddings = np.array(comment_embeddings)
+                parent_comment_embeddings = np.array(parent_comment_embeddings)
+                fetches = {
+                    'logit': self.logit,
+                    'norm_logit': self.norm_logit,
+                    'predictions': self.predictions,
+                    'accuracy': self.accuracy       
+                }
+                feed_dict = {
+                self.bilstm.X : comment_embeddings,
+                self.bilstm.y : dataset_test_batch['label'].to_list(),
+                self.bilstm.sequence_lengths : comment_seq_length_batch,
+                self.bilstm_parent.X : parent_comment_embeddings,
+                self.bilstm_parent.sequence_lengths : parent_comment_seq_length_batch
+                }
+                resp = sess.run(fetches,feed_dict, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
+                predictions.extend(resp['predictions'])
+                accuracy.append(resp['accuracy'])
+            endtime = time.time()
+            log('Time taken to test: ', self.debug)
+            log(str(endtime - starttime), self.debug)    
+            log('Model accuracy (tf): ' + str(accuracy), self.debug)            
+            log('Model accuracy (accuracy_score): ' + str(accuracy_score(test_dataset['label'].to_list()[0:len(predictions)], predictions)), self.debug)
         except Exception as exception:
             log(str(exception), self.debug)
             
 def train(debug):
     tf.reset_default_graph()
     model = TrainModel('data/dataset/train-balanced-sarcasm.csv', debug)
-    model.train('data/trained_models_gcp/checkpoint_2')
-    #model.test('../data/test/test.csv', '../data/trained_models_gcp/checkpoint_2')
+    model.train()
+    
+def test(debug):
+    tf.reset_default_graph()
+    model = TrainModel('data/dataset/train-balanced-sarcasm.csv', debug)
+    with tf.Session() as sess:
+        elmo = tf_hub.Module("https://tfhub.dev/google/elmo/2",trainable=False)
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.tables_initializer())
+        model.test(sess, elmo, '../data/test/test.csv', '../data/trained_models_gcp/checkpoint_2')
     
 def log(message, debug):
     if debug:
