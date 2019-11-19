@@ -205,7 +205,7 @@ class TrainModel:
     def test(self, sess, elmo, test_dataset_path, trained_model_path=None):
         predictions = []
         accuracy = []
-        accuracy_score = 0
+        test_accuracy_score = 0
         try:
             test_dataset = pd.read_csv(test_dataset_path)
             test_dataset = self.get_rows(test_dataset, MAX_COMMENT_LENGTH, MAX_PARENT_COMMENT_LENGTH)
@@ -252,12 +252,12 @@ class TrainModel:
             log('Time taken to test: ', self.debug)
             log(str(endtime - starttime), self.debug)    
             log('Model accuracy (tf): ' + str(accuracy), self.debug)            
-            accuracy_score = accuracy_score(test_dataset['label'].to_list()[0:len(predictions)], predictions)
-            log('Model accuracy (accuracy_score): ' + str(accuracy_score), self.debug)
+            test_accuracy_score = accuracy_score(test_dataset['label'].to_list()[0:len(predictions)], predictions)
+            log('Model accuracy (accuracy_score): ' + str(test_accuracy_score), self.debug)
         except Exception as exception:
             log(str(exception), self.debug)
             raise exception
-        return accuracy_score, accuracy, (endtime - starttime)
+        return test_accuracy_score, accuracy, (endtime - starttime)
             
 def send_mail(subject, html_content, debug):
     message = Mail(
@@ -277,7 +277,7 @@ def send_mail(subject, html_content, debug):
 def train(debug, notify_progress):
     tf.reset_default_graph()
     model = TrainModel('data/dataset/train-balanced-sarcasm.csv', debug)
-    model.train(notify_progress)
+    model.train(notify_progress, '../data/trained_models_gcp/checkpoint_1')
     
 def test(debug):
     tf.reset_default_graph()
