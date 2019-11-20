@@ -38,7 +38,7 @@ BASE_REF = '/'
 COMMENT_LABEL = 'comment'
 PARENT_COMMENT_LABEL = 'parent_comment'
 
-DATASET_SIZE = 35000
+DATASET_SIZE = 30000
 CHUNKSIZE = 5000
 TRAIN_SIZE = 0.8
 MAX_COMMENT_LENGTH = 100
@@ -49,11 +49,15 @@ MODEL_CHECKPOINT_DURATION = 1
 #Hyperparameters for the model
 #Hyperparameter tuning required
 num_classes = 2
+intermediate_layer_size_1 = 1024
+intermediate_layer_size_2 = 512
+intermediate_layer_size_3 = 128
+lambda_l2_reg = 0.005
 word_embedding_size = 0 #For now as we are not using Glove
 elmo_embedding_size = 1024
 batch_size = 256
 epochs = 5
-init_learning_rate = 0.0001
+init_learning_rate = 0.001
 decay_rate =  0.96
 decay_steps = 8
 dropout_rate = 0.1
@@ -75,11 +79,26 @@ class TrainModel:
     def build_model(self):
         self.bilstm = BiLSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
         self.bilstm_parent = BiLSTM(num_classes,word_embedding_size,elmo_embedding_size,batch_size,epochs,init_learning_rate,decay_rate,decay_steps)
-        with tf.variable_scope('softmax',reuse=tf.AUTO_REUSE):
-            softmax_w = tf.get_variable('W', shape=[2 * feed_forward_op_size, num_classes], initializer=tf.truncated_normal_initializer(), dtype=tf.float32)
-            softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0), shape=[num_classes], dtype=tf.float32)
+        with tf.variable_scope('softmax-1',reuse=tf.AUTO_REUSE):
+            softmax_w = tf.get_variable('W', shape=[2 * feed_forward_op_size, intermediate_layer_size_1], initializer=tf.truncated_normal_initializer(), dtype=tf.float32)
+            softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0), shape=[intermediate_layer_size_1], dtype=tf.float32)    
         self.final_state = tf.concat([self.bilstm.final_state, self.bilstm_parent.final_state],1)
         self.logit = tf.matmul(self.final_state,softmax_w) + softmax_b
+        self.logit = tf.nn.softmax(self.logit)
+        with tf.variable_scope('softmax-2', reuse=tf.AUTO_REUSE):
+            softmax_w = tf.get_variable('W', shape=[intermediate_layer_size_1, intermediate_layer_size_2], initializer=tf.truncated_normal_initializer(), dtype=tf.float32)
+            softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0), shape=[intermediate_layer_size_2], dtype=tf.float32)
+        self.logit = tf.matmul(self.logit,softmax_w) + softmax_b       
+        self.logit = tf.nn.softmax(self.logit) 
+        with tf.variable_scope('softmax-3', reuse=tf.AUTO_REUSE):
+            softmax_w = tf.get_variable('W', shape=[intermediate_layer_size_2, intermediate_layer_size_3], initializer=tf.truncated_normal_initializer(), dtype=tf.float32)
+            softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0), shape=[intermediate_layer_size_3], dtype=tf.float32)    
+        self.logit = tf.matmul(self.logit,softmax_w) + softmax_b    
+        self.logit = tf.nn.softmax(self.logit)
+        with tf.variable_scope('softmax-4', reuse=tf.AUTO_REUSE):
+            softmax_w = tf.get_variable('W', shape=[intermediate_layer_size_3, num_classes], initializer=tf.truncated_normal_initializer(), dtype=tf.float32)
+            softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0), shape=[num_classes], dtype=tf.float32)  
+        self.logit = tf.matmul(self.logit,softmax_w) + softmax_b              
         self.norm_logit = tf.nn.softmax(self.logit)
         self.predictions = tf.cast(tf.math.argmax(self.norm_logit, axis=1), tf.int64)
         self.accuracy = tf.reduce_mean(tf.cast(tf.equal(self.predictions, self.bilstm.y), tf.float32))
@@ -107,7 +126,8 @@ class TrainModel:
     def train(self, notify_progress, pretrained_model_path=None):
         try:
             self.cost = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.bilstm.y, logits=self.logit)
-            self.cost = tf.reduce_mean(self.cost)
+            self.l2 = lambda_l2_reg * tf.reduce_sum(tf.nn.l2_loss(tf_var) for tf_var in tf.trainable_variables() if not "b" in tf_var.name)
+            self.cost = tf.reduce_mean(self.cost) + self.l2
             self.global_step = tf.Variable(0,name='global_step',trainable=False)
             self.optimizer = tf.train.AdamOptimizer(learning_rate=init_learning_rate)
             self.gradients = self.optimizer.compute_gradients(self.cost)
@@ -130,6 +150,8 @@ class TrainModel:
                     chunk_id = 1
                     global_step_count = 0
                     processed_entries = 0
+                    epoch_predictions = []
+                    epoch_expected = []
                     for dataset_chunk in pd.read_csv(self.dataset_path, chunksize=CHUNKSIZE):
                         processed_entries += CHUNKSIZE
                         if processed_entries > DATASET_SIZE:
@@ -160,7 +182,8 @@ class TrainModel:
                             fetches = {
                                 'cost': self.cost,
                                 'train_step': self.train_step,
-                                'global_step': self.global_step        
+                                'global_step': self.global_step,
+                                'predictions':self.predictions        
                             }
                             feed_dict = {
                             self.bilstm.X : comment_embeddings,
@@ -172,6 +195,8 @@ class TrainModel:
                             resp = sess.run(fetches,feed_dict, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
                             global_step_count = resp['global_step']
                             epoch_cost += resp['cost']
+                            epoch_predictions.extend(resp['predictions'])
+                            epoch_expected.extend(dataset_train_batch['label'].to_list())
                         chunk_endtime = time.time()
                         log('Time takes to process chunk: ', self.debug) 
                         log(str(chunk_endtime - chunk_starttime), self.debug)
@@ -180,9 +205,11 @@ class TrainModel:
                     epoch_endtime = time.time()
                     log('Testing model: ', self.debug)
                     test_accuracy_score, test_accuracy_tf, test_time = self.test(sess, elmo, '../data/test/test.csv')
-                    epoch_summary = 'Epoch Summary [' + str(time.time()) + '] :\n Time taken for epoch ' 
+                    epoch_summary = 'Epoch Summary [' + str(time.time()) + '] :\nTime taken for epoch ' 
                     epoch_summary += str(epoch) + ': \n' + str(epoch_endtime - epoch_starttime) + '\n'
-                    epoch_summary += 'Epoch cost: \n' + str(epoch_cost) + '\n' + 'Time take to test: \n' + str(test_time) + '\n'
+                    epoch_summary += 'Epoch cost: \n' + str(epoch_cost) + '\nTest Results (train): \n'
+                    epoch_summary += 'Predictions: ' + str(epoch_predictions) + '\n' + 'Expected: ' + str(epoch_expected) + '\n' + 'Accuracy Score: \n'
+                    epoch_summary += str(accuracy_score(epoch_expected, epoch_predictions)) + '\nTime taken to test: \n' + str(test_time) + '\n'
                     epoch_summary += 'Test results: \n' + 'Accuracy (tf): ' + str(test_accuracy_tf)
                     epoch_summary += '\nAccuracy (accuracy_score): ' + str(test_accuracy_score) 
                     log(epoch_summary, self.debug)
@@ -277,7 +304,7 @@ def send_mail(subject, html_content, debug):
 def train(debug, notify_progress):
     tf.reset_default_graph()
     model = TrainModel('data/dataset/train-balanced-sarcasm.csv', debug)
-    model.train(notify_progress, '../data/trained_models_gcp/checkpoint_1')
+    model.train(notify_progress)
     
 def test(debug):
     tf.reset_default_graph()
@@ -308,8 +335,7 @@ if __name__ == '__main__':
         if not os.path.isdir('../data'):
             os.mkdir('../data')
             os.mkdir('../data/test')
-            os.mkdir('../data/trained_models') 
-        print(notify_progress)    
+            os.mkdir('../data/trained_models')   
         train(debug, notify_progress)
     except getopt.GetoptError as exception:
         print(exception)
