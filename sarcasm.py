@@ -134,10 +134,6 @@ class TrainModel:
             self.train_step = self.optimizer.apply_gradients(self.gradients,global_step=self.global_step)
             config = tf.ConfigProto(device_count={'CPU': 8})
             with tf.Session(config=config) as sess:
-                if (pretrained_model_path is not None) :
-                    saver = tf.train.Saver()
-                    saver.restore(sess, tf.train.latest_checkpoint(pretrained_model_path))
-                    log(tf.train.latest_checkpoint(pretrained_model_path), self.debug)
                 if self.debug:
                     writer = tf.summary.FileWriter('../data/graphs', sess.graph)
                 if not self.debug:
@@ -145,6 +141,10 @@ class TrainModel:
                 elmo = tf_hub.Module("https://tfhub.dev/google/elmo/2",trainable=False)
                 sess.run(tf.global_variables_initializer())
                 sess.run(tf.tables_initializer())
+                if (pretrained_model_path is not None) :
+                    saver = tf.train.Saver()
+                    saver.restore(sess, tf.train.latest_checkpoint(pretrained_model_path))
+                    log(tf.train.latest_checkpoint(pretrained_model_path), self.debug)
                 for epoch in range(1,epochs + 1):
                     epoch_starttime = time.time()
                     epoch_cost = 0
