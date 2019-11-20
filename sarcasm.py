@@ -5,7 +5,7 @@ import os
 #os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 import tensorflow as tf
 import tensorflow_hub as tf_hub
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, confusion_matrix
 import time
 import math
 import sys
@@ -84,17 +84,17 @@ class TrainModel:
             softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0), shape=[intermediate_layer_size_1], dtype=tf.float32)    
         self.final_state = tf.concat([self.bilstm.final_state, self.bilstm_parent.final_state],1)
         self.logit = tf.matmul(self.final_state,softmax_w) + softmax_b
-        self.logit = tf.nn.softmax(self.logit)
+        self.logit = tf.nn.relu(self.logit)
         with tf.variable_scope('softmax-2', reuse=tf.AUTO_REUSE):
             softmax_w = tf.get_variable('W', shape=[intermediate_layer_size_1, intermediate_layer_size_2], initializer=tf.truncated_normal_initializer(), dtype=tf.float32)
             softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0), shape=[intermediate_layer_size_2], dtype=tf.float32)
         self.logit = tf.matmul(self.logit,softmax_w) + softmax_b       
-        self.logit = tf.nn.softmax(self.logit) 
+        self.logit = tf.nn.relu(self.logit) 
         with tf.variable_scope('softmax-3', reuse=tf.AUTO_REUSE):
             softmax_w = tf.get_variable('W', shape=[intermediate_layer_size_2, intermediate_layer_size_3], initializer=tf.truncated_normal_initializer(), dtype=tf.float32)
             softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0), shape=[intermediate_layer_size_3], dtype=tf.float32)    
         self.logit = tf.matmul(self.logit,softmax_w) + softmax_b    
-        self.logit = tf.nn.softmax(self.logit)
+        self.logit = tf.nn.relu(self.logit)
         with tf.variable_scope('softmax-4', reuse=tf.AUTO_REUSE):
             softmax_w = tf.get_variable('W', shape=[intermediate_layer_size_3, num_classes], initializer=tf.truncated_normal_initializer(), dtype=tf.float32)
             softmax_b = tf.get_variable('b',initializer=tf.constant_initializer(0.0), shape=[num_classes], dtype=tf.float32)  
@@ -126,7 +126,7 @@ class TrainModel:
     def train(self, notify_progress, pretrained_model_path=None):
         try:
             self.cost = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.bilstm.y, logits=self.logit)
-            self.l2 = lambda_l2_reg * tf.reduce_sum(tf.nn.l2_loss(tf_var) for tf_var in tf.trainable_variables() if not "b" in tf_var.name)
+            self.l2 = lambda_l2_reg * tf.reduce_sum([tf.nn.l2_loss(tf_var) for tf_var in tf.trainable_variables() if not "b" in tf_var.name])
             self.cost = tf.reduce_mean(self.cost) + self.l2
             self.global_step = tf.Variable(0,name='global_step',trainable=False)
             self.optimizer = tf.train.AdamOptimizer(learning_rate=init_learning_rate)
@@ -137,6 +137,7 @@ class TrainModel:
                 if (pretrained_model_path is not None) :
                     saver = tf.train.Saver()
                     saver.restore(sess, tf.train.latest_checkpoint(pretrained_model_path))
+                    log(tf.train.latest_checkpoint(pretrained_model_path), self.debug)
                 if self.debug:
                     writer = tf.summary.FileWriter('../data/graphs', sess.graph)
                 if not self.debug:
@@ -204,23 +205,23 @@ class TrainModel:
                         log(str(global_step_count), self.debug)
                     epoch_endtime = time.time()
                     log('Testing model: ', self.debug)
-                    test_accuracy_score, test_accuracy_tf, test_time = self.test(sess, elmo, '../data/test/test.csv')
+                    test_accuracy_score, test_accuracy_tf, test_confusion_matrix, test_time = self.test(sess, elmo, '../data/test/test.csv')
                     epoch_summary = 'Epoch Summary [' + str(time.time()) + '] :\nTime taken for epoch ' 
                     epoch_summary += str(epoch) + ': \n' + str(epoch_endtime - epoch_starttime) + '\n'
                     epoch_summary += 'Epoch cost: \n' + str(epoch_cost) + '\nTest Results (train): \n'
-                    epoch_summary += 'Predictions: ' + str(epoch_predictions) + '\n' + 'Expected: ' + str(epoch_expected) + '\n' + 'Accuracy Score: \n'
-                    epoch_summary += str(accuracy_score(epoch_expected, epoch_predictions)) + '\nTime taken to test: \n' + str(test_time) + '\n'
+                    epoch_summary += 'Accuracy Score: \n' + str(accuracy_score(epoch_expected, epoch_predictions)) + '\nConfusion Matrix: ' + str(confusion_matrix(epoch_expected, epoch_predictions))
+                    epoch_summary += '\nTime taken to test: \n' + str(test_time) + '\n'
                     epoch_summary += 'Test results: \n' + 'Accuracy (tf): ' + str(test_accuracy_tf)
-                    epoch_summary += '\nAccuracy (accuracy_score): ' + str(test_accuracy_score) 
+                    epoch_summary += '\nAccuracy (accuracy_score): ' + str(test_accuracy_score)  + '\nConfusion Matrix: ' + str(test_confusion_matrix)
                     log(epoch_summary, self.debug)
                     if notify_progress:
                         send_mail('Model training progress', '<strong>' + epoch_summary +  '</strong>', self.debug)
                     if(epoch % MODEL_CHECKPOINT_DURATION == 0 or epoch == epochs):
                         saver = tf.train.Saver()
-                        if os.path.isdir('../data/trained_models_gcp/checkpoint_' + str(epoch)):
-                            shutil.rmtree('../data/trained_models_gcp/checkpoint_' + str(epoch))
-                        os.mkdir('../data/trained_models_gcp/checkpoint_' + str(epoch))    
-                        saver.save(sess, '../data/trained_models_gcp/checkpoint_' + str(epoch) + '/model', global_step=self.global_step)
+                        if os.path.isdir('../data/trained_models_gcp/checkpoint_3_' + str(epoch)):
+                            shutil.rmtree('../data/trained_models_gcp/checkpoint_3_' + str(epoch))
+                        os.mkdir('../data/trained_models_gcp/checkpoint_3_' + str(epoch))    
+                        saver.save(sess, '../data/trained_models_gcp/checkpoint_3_' + str(epoch) + '/model', global_step=self.global_step)
         except Exception as exception:
             log(str(exception), self.debug)
             if not self.debug:
@@ -284,7 +285,7 @@ class TrainModel:
         except Exception as exception:
             log(str(exception), self.debug)
             raise exception
-        return test_accuracy_score, accuracy, (endtime - starttime)
+        return test_accuracy_score, accuracy, confusion_matrix(test_dataset['label'].to_list()[0:len(predictions)], predictions),(endtime - starttime)
             
 def send_mail(subject, html_content, debug):
     message = Mail(
@@ -304,7 +305,7 @@ def send_mail(subject, html_content, debug):
 def train(debug, notify_progress):
     tf.reset_default_graph()
     model = TrainModel('data/dataset/train-balanced-sarcasm.csv', debug)
-    model.train(notify_progress)
+    model.train(notify_progress, '../data/trained_models_gcp/checkpoint_3')
     
 def test(debug):
     tf.reset_default_graph()
